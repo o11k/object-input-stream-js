@@ -1,0 +1,26 @@
+{
+  "name": "javaobj",
+  "version": "1.0.0",
+  "description": "ObjectInputStream for JavaScript. Equivalent to Python's javaobj-py3.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/o11k/javaobj-js.git"
+  },
+  "keywords": ["java", "serialize", "deserialize"],
+  "author": "o11k",
+  "license": "MIT",
+  "files": ["dist", "src"],
+  "bugs": {
+    "url": "https://github.com/o11k/javaobj-js/issues"
+  },
+  "homepage": "https://github.com/o11k/javaobj-js#readme",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
