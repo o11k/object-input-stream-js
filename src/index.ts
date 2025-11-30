@@ -1,9 +1,39 @@
 type ClassDesc = {}
 
+const STREAM_MAGIC      = 0xaced;
+const STREAM_VERSION    = 5;
+
+const TC_NULL           = 0x70;
+const TC_REFERENCE      = 0x71;
+const TC_CLASSDESC      = 0x72;
+const TC_OBJECT         = 0x73;
+const TC_STRING         = 0x74;
+const TC_ARRAY          = 0x75;
+const TC_CLASS          = 0x76;
+const TC_BLOCKDATA      = 0x77;
+const TC_ENDBLOCKDATA   = 0x78;
+const TC_RESET          = 0x79;
+const TC_BLOCKDATALONG  = 0x7A;
+const TC_EXCEPTION      = 0x7B;
+const TC_LONGSTRING     = 0x7C;
+const TC_PROXYCLASSDESC = 0x7D;
+const TC_ENUM           = 0x7E;
+
+const baseWireHandle    = 0x7E0000;
+
+const SC_WRITE_METHOD   = 0x01;  // if SC_SERIALIZABLE
+const SC_BLOCK_DATA     = 0x08;  // if SC_EXTERNALIZABLE
+const SC_SERIALIZABLE   = 0x02;
+const SC_EXTERNALIZABLE = 0x04;
+const SC_ENUM           = 0x10;
+
 
 class ObjectStreamException extends Error {}
+class StreamCorruptedException extends ObjectStreamException {}
 class EOFException extends ObjectStreamException {}  // Not the same hierarchy as Java
 class UTFDataFormatException extends ObjectStreamException {}    // Not the same hierarchy as Java
+
+class NotImplementedError extends Error {}  // TODO remove before publishing
 
 class ObjectInputStream {
     private data: Uint8Array;
@@ -12,6 +42,9 @@ class ObjectInputStream {
     constructor(data: Uint8Array) {
         this.data = data;
         this.offset = 0;
+
+        if (this.readShort() !== STREAM_MAGIC)   throw new StreamCorruptedException();
+        if (this.readShort() !== STREAM_VERSION) throw new StreamCorruptedException();
     }
 
     eof(): boolean {
@@ -147,7 +180,41 @@ class ObjectInputStream {
         return Array.from(resultChars.subarray(0, resultCharsOffset), String.fromCharCode).join("");
     }
 
-    readObject(): any {}
+    readObject(): any {
+        switch (this.peekByte()) {
+            case TC_OBJECT:
+                throw new NotImplementedError();
+                break;
+            case TC_CLASS:
+                throw new NotImplementedError();
+                break;
+            case TC_ARRAY:
+                throw new NotImplementedError();
+                break;
+            case TC_STRING:
+            case TC_LONGSTRING:
+                throw new NotImplementedError();
+                break;
+            case TC_ENUM:
+                throw new NotImplementedError();
+                break;
+            case TC_CLASSDESC:
+            case TC_PROXYCLASSDESC:
+                throw new NotImplementedError();
+                break;
+            case TC_REFERENCE:
+                throw new NotImplementedError();
+                break;
+            case TC_NULL:
+                throw new NotImplementedError();
+                break;
+            case TC_EXCEPTION:
+                throw new NotImplementedError();
+                break;
+            default:
+                throw new StreamCorruptedException();
+        }
+    }
 
     registerHandler<T, S>(className: string, handler: (ois: ObjectInputStream, initial: S, classDesc: ClassDesc) => T, initializer: () => S): void;
     registerHandler<T>(className: string, handler: (ois: ObjectInputStream, initial: {}, classDesc: ClassDesc) => T): void;
