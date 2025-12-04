@@ -40,10 +40,9 @@ class IndexOutOfBoundsException extends RuntimeException {}
 
 class NotImplementedError extends Error {}  // TODO remove before publishing
 
+// Note: interface and class definitions are slightly different to Java
 
 interface DataInput {
-    readFully(len: number): Uint8Array;
-    skipBytes(n: number): number;
     readBoolean(): boolean
     readByte(): number
     readUnsignedByte(): number
@@ -59,9 +58,6 @@ interface DataInput {
 
 interface ObjectInput extends DataInput {
     readObject(): any;
-    read1(): number;
-    read(len: number): Uint8Array;
-    skip(n: number): number;
 }
 
 abstract class InputStream {
@@ -80,10 +76,38 @@ abstract class InputStream {
         return result.slice(0, i);
     }
 
+    public readFully(len: number): Uint8Array {
+        const result = this.read(len);
+        if (result.length < len) {
+            throw new EOFException()
+        }
+        return result;
+    }
+
     public skip(n: number): number {
         return this.read(n).length;
     }
 }
+
+
+class BasicInputStream extends InputStream {
+    private data: Uint8Array;
+    private offset = 0;
+
+    constructor(data: Uint8Array) {
+        super();
+        this.data = data;
+    }
+
+    public read1(): number {
+        if (this.offset < this.data.length) {
+            return this.data[this.offset++];
+        } else {
+            return -1;
+        }
+    }
+}
+
 
 class ObjectInputStream extends InputStream implements ObjectInput {
     private data: Uint8Array;
@@ -115,14 +139,6 @@ class ObjectInputStream extends InputStream implements ObjectInput {
         const result = this.data.slice(this.offset, this.offset + length);
         this.offset += length;
         return result
-    }
-
-    readFully(length: number): Uint8Array {
-        const result = this.read(length);
-        if (result.length < length) {
-            throw new EOFException();
-        }
-        return result;
     }
 
     skipBytes(n: number): number {
