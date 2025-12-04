@@ -28,10 +28,12 @@ const SC_EXTERNALIZABLE = 0x04;
 const SC_ENUM           = 0x10;
 
 
-class ObjectStreamException extends Error {}
+class JavaException extends Error {}
+class IOException extends JavaException {}
+class ObjectStreamException extends IOException {}
 class StreamCorruptedException extends ObjectStreamException {}
-class EOFException extends ObjectStreamException {}  // Not the same hierarchy as Java
-class UTFDataFormatException extends ObjectStreamException {}    // Not the same hierarchy as Java
+class EOFException extends IOException {}
+class UTFDataFormatException extends IOException {}
 
 class NotImplementedError extends Error {}  // TODO remove before publishing
 
