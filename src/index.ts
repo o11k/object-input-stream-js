@@ -148,8 +148,8 @@ class ObjectInputStream extends InputStream implements ObjectInput {
         this.data = data;
         this.offset = 0;
 
-        if (this.readShort() !== STREAM_MAGIC)   throw new StreamCorruptedException();
-        if (this.readShort() !== STREAM_VERSION) throw new StreamCorruptedException();
+        if (this.readUnsignedShort() !== STREAM_MAGIC)   throw new StreamCorruptedException();
+        if (this.readUnsignedShort() !== STREAM_VERSION) throw new StreamCorruptedException();
     }
 
     private eof(): boolean {
@@ -305,8 +305,11 @@ class ObjectInputStream extends InputStream implements ObjectInput {
 
 class ByteArray {
     private static getIntegral(arr: Uint8Array, numBytes: number, signed: boolean): bigint {
-        if (numBytes < arr.length) {
+        if (arr.length < numBytes) {
             throw new IndexOutOfBoundsException();
+        }
+        if (numBytes <= 0) {
+            return 0n;
         }
         const bytes = arr.subarray(0, numBytes);
         let result = 0n;
