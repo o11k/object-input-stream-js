@@ -51,7 +51,7 @@ public class GenerateTests {
                     case Character.OTHER_LETTER:
                     case Character.TITLECASE_LETTER:
                     case Character.UPPERCASE_LETTER:
-                    
+
                     case Character.COMBINING_SPACING_MARK:
                     case Character.ENCLOSING_MARK:
                     case Character.NON_SPACING_MARK:
@@ -59,7 +59,7 @@ public class GenerateTests {
                     case Character.DECIMAL_DIGIT_NUMBER:
                     case Character.LETTER_NUMBER:
                     case Character.OTHER_NUMBER:
-                    
+
                     case Character.CONNECTOR_PUNCTUATION:
                     case Character.DASH_PUNCTUATION:
                     case Character.END_PUNCTUATION:
@@ -179,7 +179,6 @@ public class GenerateTests {
             default:
                 throw new Exception("Unexpected typecode: " + typecode);
         }
-        
     }
 
     static class A implements Serializable {

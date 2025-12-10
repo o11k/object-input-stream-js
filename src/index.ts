@@ -45,7 +45,7 @@ export namespace J {
     export type Contents = Content[];
     export type Content = Object | BlockData;
     export type BlockData = Uint8Array;
-    export type Object = 
+    export type Object =
         ObjectInstance
       | Class
       | Array
@@ -543,7 +543,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
         if (tc !== TC_CLASSDESC) throw new StreamCorruptedException("Unknown new class desc tc: " + tc);
 
         const result = {
-            type: "classDesc" as "classDesc", 
+            type: "classDesc" as "classDesc",
             proxy: false as false
         };
         const className = this.readUTF();
@@ -571,7 +571,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             const typecode = String.fromCharCode(this.readUnsignedByte());
             const fieldName = this.readUTF();
             let field: J.FieldDesc;
-            
+
             switch (typecode) {
                 case '[': case 'L':
                     const className = this.parseObject();
