@@ -30,6 +30,8 @@ test("read primitives", () => {
         J: ois.readLong.bind(ois),
         S: ois.readShort.bind(ois),
         Z: ois.readBoolean.bind(ois),
+
+        L: ois.readObject.bind(ois),
     } as const)
 
     const expectedLines = fs.readFileSync(PATH_TXT, "utf-8").split("\n");
@@ -39,16 +41,19 @@ test("read primitives", () => {
 
         // Read from stream based on typecode
         const typecode = expectedLine[0];
-        if (!(typecode in methods)) throw new Error("Unknwon typecode: " + typecode);
+        if (!(typecode in methods)) throw new Error("Unknown typecode: " + typecode);
         const method = methods[typecode as keyof typeof methods];
         const found = method();
 
         // Read expected value from file
         const expectedStr = expectedLine.slice(1);
-        let expected = eval(typecode === "J" ? expectedStr+"n" : expectedStr);
-        if (typecode === "C") expected = String.fromCharCode(expected);
+        let expected = eval("(" + expectedStr + ")");
 
-        // We can even expect floats and doubles to be exactly the same, since they are written exactly to stream
-        expect(found).toBe(expected);
+        if (typecode === "L") {
+          expect(found).toMatchObject(expected);
+        } else {
+          // We can even expect floats and doubles to be exactly the same, since they are written exactly to stream
+          expect(found).toBe(expected);
+        }
     }
 })
