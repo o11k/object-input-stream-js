@@ -27,20 +27,20 @@ test("read primitives", () => {
         Z: ois.readBoolean.bind(ois),
     } as const)
 
-    const expectedFile = new Uint8Array(fs.readFileSync("tests/tmp/expected.txt"))
-    const expectedLines = splitUint8Array(expectedFile, "\n".charCodeAt(0));
+    const expectedLines = fs.readFileSync("tests/tmp/expected.txt", "utf-8").split("\n");
     for (let i=0; i<expectedLines.length; i++) {
         const expectedLine = expectedLines[i];
+        if (expectedLine.length === 0) continue;
 
         // Read from stream based on typecode
-        const typecode = new TextDecoder().decode(new Uint8Array([expectedLine[0]]));
+        const typecode = expectedLine[0];
         if (!(typecode in methods)) throw new Error("Unknwon typecode: " + typecode);
         const method = methods[typecode as keyof typeof methods];
         const found = method();
 
         // Read expected value from file
-        const expectedString = new TextDecoder().decode(expectedLine.subarray(1));
-        let expected = eval(typecode === "J" ? expectedString+"n" : expectedString);
+        const expectedStr = expectedLine.slice(1);
+        let expected = eval(typecode === "J" ? expectedStr+"n" : expectedStr);
         if (typecode === "C") expected = String.fromCharCode(expected);
 
         // We can even expect floats and doubles to be exactly the same, since they are written exactly to stream
