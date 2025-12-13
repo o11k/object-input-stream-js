@@ -36,6 +36,10 @@ export class RuntimeException extends JavaException {}
 export class IllegalStateException extends RuntimeException {}
 export class IndexOutOfBoundsException extends RuntimeException {}
 export class OptionalDataException extends ObjectStreamException {}
+export class InvalidClassException extends ObjectStreamException {}
+export class ReflectiveOperationException extends JavaException {}
+export class ClassNotFoundException extends ReflectiveOperationException {}
+export class NotActiveException extends ObjectStreamException {}
 
 export class NotImplementedError extends Error {}  // TODO remove before publishing
 
@@ -46,7 +50,7 @@ export namespace J {
     export type Content = Object | BlockData;
     export type BlockData = Uint8Array;
     export type Object =
-        ObjectInstance
+        Serializable | Externalizable
       | Class
       | Array
       | String
@@ -57,9 +61,19 @@ export namespace J {
     //| Exception
     export type Exception = Object
 
-    export type ObjectInstance = {
-        [JAVAOBJ_SYMBOL]: ObjectInstanceInternal,
-        [key: string | number | symbol]: any,
+    export class SerializableFallback implements Serializable {
+        $classDesc: ClassDesc | null = null;
+        [field: string]: any;
+    }
+
+    export class ExternalizableFallback implements Externalizable {
+        $classDesc: ClassDesc | null = null;
+        annotations: Contents = [];
+
+        readExternal(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            this.$classDesc = classDesc;
+            this.annotations = ois.readAllContents();
+        }
     }
 
     export type ObjectInstanceInternal = {
@@ -116,6 +130,18 @@ export namespace J {
 }
 
 // Note: interface and class definitions are slightly different to Java
+
+export interface Serializable {
+    readObject?(ois: ObjectInputStream, classDesc: J.ClassDesc): void
+    readResolve?(): any
+    serialVersionUID?: bigint
+    [key: string | symbol]: any  // To prevent ts(2559)
+}
+
+export interface Externalizable {
+    readExternal(ois: ObjectInputStream, classDesc: J.ClassDesc): void
+    readResolve?(): any
+}
 
 export abstract class ByteInput {
     abstract read1(): number;
@@ -234,41 +260,60 @@ export abstract class PrimitiveInput extends ByteInput {
 }
 
 class HandleTable {
-    private table: Map<number, J.Object>;
+    private handle2obj: Map<number, J.Object> = new Map();
+    // Primitives can end up having multiple handles
+    private obj2handles: Map<J.Object, number[]> = new Map();
     private currHandle = baseWireHandle;
 
-    constructor() {
-        this.table = new Map();
-    }
-
     reset(): void {
-        this.table.clear();
+        this.handle2obj.clear();
+        this.obj2handles.clear();
         this.currHandle = baseWireHandle;
     }
 
     newHandle(obj: J.Object): number {
         const handle = this.currHandle++;
-        this.table.set(handle, obj);
+        const handles = this.obj2handles.get(obj) ?? [];
+        handles.push(handle);
+        this.handle2obj.set(handle, obj);
+        this.obj2handles.set(obj, handles);
         return handle;
     }
 
     getObject(handle: number): J.Object {
-        const result = this.table.get(handle);
+        const result = this.handle2obj.get(handle);
         if (result === undefined) throw new StreamCorruptedException("Object handle doesn't exist: " + handle);
         return result;
+    }
+
+    replaceObject(oldObj: J.Object, newObj: J.Object): void {
+        const handles = this.obj2handles.get(oldObj);
+        if (handles === undefined || handles.length === 0)
+            throw new Error("Object to replace doesn't have a handle: " + oldObj);
+        if (handles.length > 1)
+            throw new Error("Object to replace has multiple handles: " + oldObj);
+        const handle = handles[0];
+        this.handle2obj.set(handle, newObj);
+        this.obj2handles.delete(oldObj);
+        this.obj2handles.set(newObj, handles);
     }
 }
 
 export class ObjectInputStreamParser extends PrimitiveInput {
     private data: Uint8Array;
-    private offset: number;
-    private handleTable: HandleTable;
+    private offset = 0;
+    private handleTable = new HandleTable();
+    private serializableClasses = new Map<string, new () => Serializable>();
+    private externalizableClasses = new Map<string, new () => Externalizable>();
+    private contextStack: {
+        classDesc: J.ClassDesc,
+        object: Serializable | Externalizable,
+        alreadyReadFields: boolean
+    }[] = [];
 
     constructor(data: Uint8Array) {
         super();
         this.data = data;
-        this.offset = 0;
-        this.handleTable = new HandleTable();
 
         if (this.readUnsignedShort() !== STREAM_MAGIC) throw new StreamCorruptedException("Missing STREAM_MAGIC");
         if (this.readUnsignedShort() !== STREAM_VERSION) throw new StreamCorruptedException("Missing STREAM_VERSION");
@@ -290,7 +335,14 @@ export class ObjectInputStreamParser extends PrimitiveInput {
         return this.offset >= this.data.length;
     }
 
-    public nextContent(): J.Content {
+    public nextContent(endBlockEOF=false): J.Content {
+        if (this.contextStack.length > 0) {
+            const flags = this.contextStack[this.contextStack.length-1].classDesc.flags;
+            if (((flags & SC_SERIALIZABLE) && (flags & SC_WRITE_METHOD)) ||
+                ((flags & SC_EXTERNALIZABLE) && (flags & SC_BLOCK_DATA)))
+                endBlockEOF = true;
+        }
+
         let tc = this.peek1();
 
         // This is technically an "object" and not a "content", but in practice it doesn't matter
@@ -318,20 +370,18 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             case TC_NULL:
             case TC_EXCEPTION:
                 return this.parseObject();
+            case TC_ENDBLOCKDATA:
+                if (endBlockEOF) throw new EOFException();
             default:
                 throw new StreamCorruptedException("Unknown content tc: " + tc);
         }
     }
 
-    protected parseContents(allowEndBlock=false): J.Contents {
+    public parseContents(endBlockEOF=false): J.Contents {
         const result = [];
-        while (!this.eof()) {
-            const tc = this.peek1();
-            if (tc === TC_ENDBLOCKDATA && allowEndBlock)
-                break;
-
+        while (true) {
             try {
-                result.push(this.nextContent());
+                result.push(this.nextContent(endBlockEOF));
             } catch (ex) {
                 if (ex instanceof EOFException) {
                     break;
@@ -388,62 +438,118 @@ export class ObjectInputStreamParser extends PrimitiveInput {
         }
     }
 
-    protected parseNewObject(): J.ObjectInstance {
-        const tc = this.read1();
-        if (tc !== TC_OBJECT) throw new StreamCorruptedException("Unknown new object tc: " + tc);
-        const result: Partial<J.ObjectInstance> = {};
-        const classDesc = this.parseClassDesc();
-        const handle = this.handleTable.newHandle(result as J.ObjectInstance);
-
-        const internal = this._parseObjectInternal(classDesc);
-        // @ts-expect-error
-        internal.handle = handle;
-
-        for (const currData of internal.classData.values()) {
-            for (const [fieldName, fieldValue] of currData.values ?? new Map() as J.Values) {
-                result[fieldName] = fieldValue;
-            }
-        }
-        return Object.assign(result, {[JAVAOBJ_SYMBOL]: internal})
-    }
-
-    private _parseObjectInternal(classDesc: J.ClassDesc | null): J.ObjectInstanceInternal {
-        const result: Partial<J.ObjectInstanceInternal> = {};
-
-        const classChain = [];
-        let currClass = classDesc;
+    private _getClassDescHierarchy(classDesc: J.ClassDesc): J.ClassDesc[] {
+        const hierarchy = [];
+        let currClass: J.ClassDesc | null = classDesc;
         while (currClass !== null) {
-            classChain.push(currClass);
+            hierarchy.push(currClass);
             currClass = currClass.super;
         }
-        classChain.reverse();
+        return hierarchy.reverse();
+    }
 
-        const classData = [];
-        for (const classDesc of classChain) {
-            let currData: J.ClassData;
-            const flags = classDesc.flags;
+    protected parseNewObject(): Serializable | Externalizable {
+        const tc = this.read1();
+        if (tc !== TC_OBJECT) throw new StreamCorruptedException("Unknown new object tc: " + tc);
 
-            if ((SC_SERIALIZABLE & flags) && !(SC_WRITE_METHOD & flags)) {
-                currData = {
-                    values: this.parseValues(classDesc)
-                };
-            } else if ((SC_SERIALIZABLE & flags) && !(SC_WRITE_METHOD & flags)) {
-                currData = {
-                    values: this.parseValues(classDesc),
-                    annotation: this.parseObjectAnnotation(),
-                }
-            } else if ((SC_EXTERNALIZABLE & flags) && !(SC_BLOCK_DATA & flags)) {
-                throw new NotImplementedError("PROTOCOL_VERSION_1 Externalizable object");
-            } else if ((SC_EXTERNALIZABLE & flags) && !(SC_BLOCK_DATA & flags)) {
-                currData = {
-                    annotation: this.parseObjectAnnotation(),
-                }
-            } else {
-                throw new StreamCorruptedException("Unknown classDescFlags: " + flags);
-            }
-            classData.push(currData);
+        // The docs say an object gets a handle before parsing its classDesc, but the implementation says otherwise
+        const classDesc = this.parseClassDesc();
+        if (classDesc === null) throw new StreamCorruptedException("Null classDesc");
+
+        if (classDesc.flags & SC_EXTERNALIZABLE) {
+            return this.parseExternalizable(classDesc);
+        } else if (classDesc.flags & SC_SERIALIZABLE) {
+            return this.parseSerializable(classDesc);
+        } else {
+            throw new StreamCorruptedException("classDesc for " + classDesc.className + " not serializable and not externalizable");
         }
-        return Object.assign(result, {classDesc, classData});
+    }
+
+    protected parseExternalizable(classDesc: J.ClassDesc): Externalizable {
+        // Resolve object constructor
+        let Ctor = this.externalizableClasses.get(classDesc.className);
+        if (Ctor === undefined) {
+            if (classDesc.flags & SC_BLOCK_DATA) {
+                Ctor = J.ExternalizableFallback;
+            } else {
+                throw new ClassNotFoundException("Cannot deserialize instance of Externalizable class " + classDesc.className + " written using PROTOCOL_VERSION_1, without a matching JS-side class");
+            }
+        }
+
+        // Create object
+        const result = new Ctor();
+        this.handleTable.newHandle(result);
+
+        // Call readExternal
+        this.contextStack.push({classDesc, object: result, alreadyReadFields: false});
+        const subOis = new ObjectInputStream(this);
+        result.readExternal(subOis, classDesc);
+        if (classDesc.flags & SC_BLOCK_DATA) {
+            subOis.readAllContents();  // Skip unread annotations
+            if (this.read1() !== TC_ENDBLOCKDATA) throw new StreamCorruptedException("Expected TC_ENDBLOCKDATA");
+        }
+        this.contextStack.pop();
+
+        // Replace result if applicable
+        if (result.readResolve !== undefined) {
+            const replaced = result.readResolve();
+            this.handleTable.replaceObject(result, replaced);
+            return replaced;
+        }
+
+        return result;
+    }
+
+    protected parseSerializable(classDesc: J.ClassDesc): Serializable {
+        // Resolve object constructor
+        const Ctor: new () => Serializable = this.serializableClasses.get(classDesc.className) ?? J.SerializableFallback;
+
+        // Create object
+        const result = new Ctor();
+        this.handleTable.newHandle(result);
+
+        // Call readObject methods
+        const classDescs = this._getClassDescHierarchy(classDesc);
+        for (const currDesc of classDescs) {
+            // Resolve readObject method
+            // Defaults to defaultReadObject if classDesc's SC_WRITE_METHOD flag isn't set, or if class isn't registered in JS, or if JS class doesn't have a readObject method
+            let readObjectMethod: NonNullable<Serializable["readObject"]> | null = null;
+            if (currDesc.flags & SC_WRITE_METHOD) {
+                const currCtor = this.serializableClasses.get(currDesc.className);
+                if (currCtor !== undefined && !(result instanceof currCtor)) {
+                    throw new Error(`Serializable class ${currDesc.className} is a superclass of ${classDesc.className} in Java, but not in JS`);
+                }
+                if (currCtor !== undefined && Object.prototype.hasOwnProperty.call(currCtor.prototype, "readObject")) {
+                    readObjectMethod = currCtor.prototype.readObject;
+                }
+            }
+
+            // Call readObject method
+            this.contextStack.push({classDesc, object: result, alreadyReadFields: false});
+            const subOis = new ObjectInputStream(this);
+            if (readObjectMethod !== null) {
+                readObjectMethod.call(result, subOis, classDesc);
+            } else {
+                subOis.defaultReadObject();
+            }
+            if (classDesc.flags & SC_WRITE_METHOD) {
+                subOis.readAllContents();  // Skip unread annotations
+                if (this.read1() !== TC_ENDBLOCKDATA) throw new StreamCorruptedException("Expected TC_ENDBLOCKDATA");
+            }
+            this.contextStack.pop();
+        }
+
+        if (Ctor === J.SerializableFallback)
+            (result as J.SerializableFallback).$classDesc = classDesc;
+
+        // Replace result if applicable
+        if (result.readResolve !== undefined) {
+            const replaced = result.readResolve();
+            this.handleTable.replaceObject(result, replaced);
+            return replaced;
+        }
+
+        return result;
     }
 
     protected parseValues(classDesc: J.ClassDesc): J.Values {
@@ -601,10 +707,9 @@ export class ObjectInputStreamParser extends PrimitiveInput {
                 return null;
             case TC_REFERENCE:
                 // TODO: check that's it's a classdesc
-                const obj = this.parsePrevObject();
+                const obj = this.parsePrevObject() as J.ClassDesc;
                 if (typeof obj !== "object" || obj === null || obj instanceof Array || obj.type !== "classDesc")
                     throw new StreamCorruptedException();
-                // @ts-expect-error  TODO change types to classes
                 return obj;
             default:
                 throw new StreamCorruptedException("Unknown class desc tc: " + tc);
@@ -633,69 +738,132 @@ export class ObjectInputStreamParser extends PrimitiveInput {
 
     protected parseObjectAnnotation(): J.Contents { return this._parseEndBlockTerminatedContents(); }
     protected parseClassAnnotation(): J.Contents { return this._parseEndBlockTerminatedContents(); }
+
+    public registerSerializable(name: string, clazz: new () => Serializable): void {
+        this.serializableClasses.set(name, clazz)
+    }
+    public registerExternalizable(name: string, clazz: new () => Externalizable): void {
+        this.externalizableClasses.set(name, clazz)
+    }
+
+    public readFields(): J.Values {
+        if (this.contextStack.length === 0) throw new NotActiveException("Not inside a readObject method");
+        const context = this.contextStack[this.contextStack.length - 1];
+        if (context.alreadyReadFields) throw new NotActiveException("FIelds already read");
+        if (!(context.classDesc.flags & SC_SERIALIZABLE)) throw new NotActiveException("Object not serializable");
+
+        context.alreadyReadFields = true;
+        return this.parseValues(context.classDesc);
+    }
+
+    public defaultReadObject(): void {
+        const fields = this.readFields();
+        const context = this.contextStack[this.contextStack.length-1];
+        const obj = context.object as Serializable;
+
+        for (const [name, value] of fields) {
+            obj[name] = value;
+        }
+    }
 }
 
+const NO_CONTENT = Symbol("no content");
 const CONTENT_EOF = Symbol("content eof");
-
 
 export class ObjectInputStream extends PrimitiveInput {
     private parser: ObjectInputStreamParser;
-    private currContent: J.Content | typeof CONTENT_EOF;
-    private blockOffset: number;
+    private currBlock: Uint8Array | null = null;
+    private blockOffset: number = 0;
 
-    constructor(data: Uint8Array) {
+    private nextContent: J.Content | typeof NO_CONTENT = NO_CONTENT;
+
+    constructor(data: Uint8Array | ObjectInputStreamParser) {
         super();
-        this.parser = new ObjectInputStreamParser(data)
-
-        this.currContent = null;
-        this.blockOffset = 0;
-        this.readNextContent();
+        this.parser = data instanceof ObjectInputStreamParser ? data : new ObjectInputStreamParser(data)
     }
 
-    protected readNextContent(): void {
-        this.blockOffset = 0;
-        try {
-            this.currContent = this.parser.nextContent();
-        } catch (ex) {
-            if (ex instanceof EOFException) {
-                this.currContent = CONTENT_EOF;
-            } else {
-                throw ex;
-            }
+    protected readNextContent(): J.Content {
+        if (this.nextContent !== NO_CONTENT) {
+            const result = this.nextContent;
+            this.nextContent = NO_CONTENT;
+            return result;
         }
 
-        // Skip empty blocks
-        if (this.currContent instanceof Uint8Array && this.currContent.length === 0)
-            return this.readNextContent();
+        return this.parser.nextContent();
     }
 
     read1() {
-        if (this.currContent === CONTENT_EOF)
-            return -1;
+        // Ensure you're inside a block
+        while (this.currBlock === null) {
+            let content = this.readNextContent();
+            if (!(content instanceof Uint8Array)) {
+                this.nextContent = content;
+                return -1;
+            }
 
-        if (!(this.currContent instanceof Uint8Array))
-            return -1;
+            // Skip empty blocks
+            if (content.length === 0) continue;
 
-        if (this.blockOffset >= this.currContent.length)
-            throw new IllegalStateException();
+            this.currBlock = content;
+            this.blockOffset = 0;
+        }
 
-        const result = this.currContent[this.blockOffset++];
+        if (this.blockOffset >= this.currBlock.length)
+            throw new Error("blockOffset >= currBlock.length");
 
-        if (this.blockOffset >= this.currContent.length)
-            this.readNextContent();
+        const result = this.currBlock[this.blockOffset++];
+
+        if (this.blockOffset >= this.currBlock.length) {
+            this.currBlock = null;
+            this.blockOffset = 0;
+        }
 
         return result;
     }
 
     readObject(): J.Object {
-        if (this.currContent === CONTENT_EOF)
-            throw new EOFException();
-
-        if (this.currContent instanceof Uint8Array)
+        if (this.currBlock !== null)
             throw new OptionalDataException();
 
-        const result = this.currContent;
-        this.readNextContent();
+        const content = this.readNextContent();
+        // TODO readResolve can return a Uint8Array / Serializable classes can descend from it
+        if (content instanceof Uint8Array) {
+            this.nextContent = content;
+            throw new OptionalDataException();
+        }
+
+        return content;
+    }
+
+    public registerSerializable(name: string, clazz: new () => Serializable): void {
+        this.parser.registerSerializable(name, clazz);
+    }
+    public registerExternalizable(name: string, clazz: new () => Externalizable): void {
+        this.parser.registerExternalizable(name, clazz);
+    }
+
+    public readFields(): J.Values {
+        if (this.currBlock !== null)
+            throw new IllegalStateException("unread block data")
+        return this.parser.readFields();
+    }
+
+    public defaultReadObject(): void {
+        if (this.currBlock !== null)
+            throw new IllegalStateException("unread block data")
+        this.parser.defaultReadObject();
+    }
+
+    public readAllContents(): J.Contents {
+        const result: J.Contents = [];
+
+        if (this.currBlock !== null) {
+            result.push(this.currBlock.slice(this.blockOffset));
+            this.currBlock = null;
+            this.blockOffset = 0;
+        }
+
+        result.push(...this.parser.parseContents())
         return result;
     }
 }

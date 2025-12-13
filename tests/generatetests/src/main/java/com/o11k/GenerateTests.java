@@ -37,6 +37,7 @@ public class GenerateTests {
                 case '\n': s = "\\n"; break;
                 case '\r': s = "\\r"; break;
                 case '\t': s = "\\t"; break;
+                case '\\': s = "\\\\"; break;
 
                 // ASCII space is printable
                 case ' ': s = " "; break;
