@@ -40,6 +40,7 @@ export class InvalidClassException extends ObjectStreamException {}
 export class ReflectiveOperationException extends JavaException {}
 export class ClassNotFoundException extends ReflectiveOperationException {}
 export class NotActiveException extends ObjectStreamException {}
+export class InvalidObjectException extends ObjectStreamException {}
 
 export class NotImplementedError extends Error {}  // TODO remove before publishing
 
@@ -525,14 +526,14 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             }
 
             // Call readObject method
-            this.contextStack.push({classDesc, object: result, alreadyReadFields: false});
+            this.contextStack.push({classDesc: currDesc, object: result, alreadyReadFields: false});
             const subOis = new ObjectInputStream(this);
             if (readObjectMethod !== null) {
-                readObjectMethod.call(result, subOis, classDesc);
+                readObjectMethod.call(result, subOis, currDesc);
             } else {
                 subOis.defaultReadObject();
             }
-            if (classDesc.flags & SC_WRITE_METHOD) {
+            if (currDesc.flags & SC_WRITE_METHOD) {
                 subOis.readAllContents();  // Skip unread annotations
                 if (this.read1() !== TC_ENDBLOCKDATA) throw new StreamCorruptedException("Expected TC_ENDBLOCKDATA");
             }
