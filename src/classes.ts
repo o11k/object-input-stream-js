@@ -90,14 +90,40 @@ export namespace java {
         export class TreeSet extends Set implements Serializable {
             readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
                 ois.readFields();
-
-                const comparator = ois.readObject();
-                if (comparator !== null)
-                    throw new NotImplementedError("TreeSet with comparator");
+                ois.readObject();  // Comparator
 
                 const size = ois.readInt();
                 for (let i=0; i<size; i++)
                     this.add(ois.readObject());
+            }
+        }
+
+        export class HashMap extends Map implements Serializable {
+            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+                ois.readFields();
+                ois.readInt();
+
+                const size = ois.readInt();
+                for (let i=0; i<size; i++) {
+                    const key = ois.readObject();
+                    const val = ois.readObject();
+                    this.set(key, val);
+                }
+            }
+        }
+
+        export class LinkedHashMap extends HashMap {}
+
+        export class TreeMap extends Map implements Serializable {
+            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+                ois.readFields();
+
+                const size = ois.readInt();
+                for (let i=0; i<size; i++) {
+                    const key = ois.readObject();
+                    const val = ois.readObject();
+                    this.set(key, val);
+                }
             }
         }
     }
