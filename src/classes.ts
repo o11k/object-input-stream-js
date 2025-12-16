@@ -63,6 +63,16 @@ export namespace java {
             }
         }
 
+        export class ArrayDeque extends Array implements Serializable {
+            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+                ois.readFields();
+
+                const size = ois.readInt();
+                for (let i=0; i<size; i++)
+                    this.push(ois.readObject());
+            }
+        }
+
         export class HashSet extends Set implements Serializable {
             readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
                 ois.readFields(); // None
