@@ -348,43 +348,24 @@ public class GenerateTests {
         final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + PRIMITIVE_WRAPPERS_FILENAME + ".ser");
         final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
 
-        oos.writeObject((Byte)(byte)5);
-        oos.writeObject((Character)(char)5);
-        oos.writeObject((Double)5d);
-        oos.writeObject((Float)5f);
-        oos.writeObject((Integer)5);
-        oos.writeObject((Long)5L);
-        oos.writeObject((Short)(short)5);
-        oos.writeObject((Boolean)true);
+        oos.writeObject((Byte     )(byte   )5);
+        oos.writeObject((Character)(char   )5);
+        oos.writeObject((Double   )(double )5);
+        oos.writeObject((Float    )(float  )5);
+        oos.writeObject((Integer  )(int    )5);
+        oos.writeObject((Long     )(long   )5);
+        oos.writeObject((Short    )(short  )5);
+        oos.writeObject((Boolean  )(boolean)true);
 
         oos.close();
         outSerialized.close();
     }
 
     public static void main(String[] args) throws Exception {
+        new File(PATH_DIR).mkdirs();
         genPrimitives();
         genFloats();
         genIntLimits();
         genPrimitiveWrappers();
-        if (true) return;
-
-        new File(PATH_DIR).mkdirs();
-        final FileWriter outExpected = new FileWriter(PATH_TXT);
-        final FileOutputStream outSerialized = new FileOutputStream(PATH_SER);
-        final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
-        final Random rnd = new Random();
-
-        for (int i=0; i<NUM_ITEMS_TO_WRITE; i++) {
-            final float choice = rnd.nextFloat();
-            if (choice < CHANCE_PRIMITIVE) {
-                writePrimitive(rnd, outExpected, oos);
-            } else {
-                writeObject(rnd, outExpected, oos);
-            }
-        }
-
-        oos.close();
-        outSerialized.close();
-        outExpected.close();
     }
 }
