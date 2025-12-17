@@ -53,6 +53,40 @@ class Randomizer {
     static long nextLong(Random rnd) { return rnd.nextLong(); }
     static short nextShort(Random rnd) { return (short)rnd.nextInt(1 << 16); }
     static boolean nextBoolean(Random rnd) { return rnd.nextBoolean(); }
+
+    static String nextString(Random rnd) { return UUID.randomUUID().toString(); }  // TODO
+
+    static <T> T nextObject(Random rnd, Class<T> clazz) throws Exception {
+        T obj = clazz.getDeclaredConstructor().newInstance();
+
+        for (Field f : clazz.getDeclaredFields()) {
+            f.setAccessible(true);
+
+            Class<?> type = f.getType();
+            if (type == byte.class || type == Byte.class) {
+                f.set(obj, nextByte(rnd));
+            } else if (type == char.class || type == Character.class) {
+                f.set(obj, nextChar(rnd));
+            } else if (type == double.class || type == Double.class) {
+                f.set(obj, nextDouble(rnd));
+            } else if (type == float.class || type == Float.class) {
+                f.set(obj, nextFloat(rnd));
+            } else if (type == int.class || type == Integer.class) {
+                f.set(obj, nextInt(rnd));
+            } else if (type == long.class || type == Long.class) {
+                f.set(obj, nextLong(rnd));
+            } else if (type == short.class || type == Short.class) {
+                f.set(obj, nextShort(rnd));
+            } else if (type == boolean.class || type == Boolean.class) {
+                f.set(obj, nextBoolean(rnd));
+            } else if (!type.isPrimitive()) {
+                // recursively fill nested object
+                f.set(obj, nextObject(rnd, type));
+            }
+        }
+
+        return obj;
+    }
 }
 
 class ToJS {
@@ -223,7 +257,98 @@ public class GenerateTests {
         oos.writeObject(obj);
     }
 
+    static final String PRIMITIVES_FILENAME = "primitives";
+    static void genPrimitives() throws Exception {
+        final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + PRIMITIVES_FILENAME + ".ser");
+        final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
+
+        oos.writeByte(69);
+        oos.writeChar('✔');
+        oos.writeDouble(420e69);
+        oos.writeFloat(-9e30f);
+        oos.writeInt(420 * 69);
+        oos.writeLong(420L << (6*9));
+        oos.writeShort(-12345);
+        oos.writeBoolean(true);
+
+        oos.close();
+        outSerialized.close();
+    }
+
+    static final String FLOATS_FILENAME = "floats";
+    static void genFloats() throws Exception {
+        final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + FLOATS_FILENAME + ".ser");
+        final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
+
+        oos.writeFloat(0.5f);
+        oos.writeFloat(1_000_000f);
+        oos.writeFloat(0.0f);
+        oos.writeFloat(-0.0f);
+        oos.writeFloat(Float.POSITIVE_INFINITY);
+        oos.writeFloat(Float.NEGATIVE_INFINITY);
+        oos.writeFloat(Float.NaN);
+        oos.writeFloat(1e-40f);
+
+        oos.writeDouble(0.5d);
+        oos.writeDouble(1_000_000d);
+        oos.writeDouble(0.0d);
+        oos.writeDouble(-0.0d);
+        oos.writeDouble(Double.POSITIVE_INFINITY);
+        oos.writeDouble(Double.NEGATIVE_INFINITY);
+        oos.writeDouble(Double.NaN);
+        oos.writeDouble(1e-310d);
+
+        oos.close();
+        outSerialized.close();
+    }
+
+    static final String INT_LIMITS_FILENAME = "int-limits";
+    static void genIntLimits() throws Exception {
+        final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + INT_LIMITS_FILENAME + ".ser");
+        final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
+
+        oos.writeByte(-1);
+        oos.writeByte(0);
+        oos.writeByte(1);
+        oos.writeByte(Byte.MIN_VALUE);
+        oos.writeByte(Byte.MAX_VALUE);
+
+        oos.writeChar(0);
+        oos.writeChar(Character.MIN_VALUE);
+        oos.writeChar(Character.MAX_VALUE);
+        oos.writeChar(Character.MIN_LOW_SURROGATE);
+        oos.writeChar(Character.MAX_LOW_SURROGATE);
+        oos.writeChar(Character.MIN_HIGH_SURROGATE);
+        oos.writeChar(Character.MAX_HIGH_SURROGATE);
+
+        oos.writeInt(-1);
+        oos.writeInt(0);
+        oos.writeInt(1);
+        oos.writeInt(Integer.MIN_VALUE);
+        oos.writeInt(Integer.MAX_VALUE);
+
+        oos.writeLong(-1L);
+        oos.writeLong(0L);
+        oos.writeLong(1L);
+        oos.writeLong(Long.MIN_VALUE);
+        oos.writeLong(Long.MAX_VALUE);
+
+        oos.writeShort(-1);
+        oos.writeShort(0);
+        oos.writeShort(1);
+        oos.writeShort(Short.MIN_VALUE);
+        oos.writeShort(Short.MAX_VALUE);
+
+        oos.close();
+        outSerialized.close();
+    }
+
     public static void main(String[] args) throws Exception {
+        genPrimitives();
+        genFloats();
+        genIntLimits();
+        if (true) return;
+
         new File(PATH_DIR).mkdirs();
         final FileWriter outExpected = new FileWriter(PATH_TXT);
         final FileOutputStream outSerialized = new FileOutputStream(PATH_SER);
