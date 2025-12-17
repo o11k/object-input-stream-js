@@ -1,4 +1,4 @@
-import { InvalidObjectException, J, NotImplementedError, ObjectInputStream, Serializable } from ".";
+import { InvalidObjectException, J, ObjectInputStream, Serializable } from ".";
 
 export namespace java {
     export namespace lang {
@@ -38,7 +38,7 @@ export namespace java {
 
     export namespace util {
         export class ArrayList extends Array implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 // Read size from fields
                 const size = ois.readFields().get("size");
                 if (typeof size !== "number" || size < 0)
@@ -54,7 +54,7 @@ export namespace java {
         }
 
         export class LinkedList extends Array implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields();
 
                 const size = ois.readInt();
@@ -64,7 +64,7 @@ export namespace java {
         }
 
         export class ArrayDeque extends Array implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields();
 
                 const size = ois.readInt();
@@ -74,7 +74,7 @@ export namespace java {
         }
 
         export class HashSet extends Set implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields(); // None
                 ois.readInt();    // Capacity
                 ois.readFloat();  // Load factor
@@ -88,7 +88,7 @@ export namespace java {
         export class LinkedHashSet extends HashSet {}
 
         export class TreeSet extends Set implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields();
                 ois.readObject();  // Comparator
 
@@ -99,7 +99,7 @@ export namespace java {
         }
 
         export class HashMap extends Map implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields();
                 ois.readInt();
 
@@ -115,7 +115,7 @@ export namespace java {
         export class LinkedHashMap extends HashMap {}
 
         export class TreeMap extends Map implements Serializable {
-            readObject(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
+            readObject(ois: ObjectInputStream): void {
                 ois.readFields();
 
                 const size = ois.readInt();
