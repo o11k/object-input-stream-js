@@ -9,6 +9,7 @@ import {
     NotActiveException,
     NotImplementedError,
 } from './exceptions';
+import { builtinSerializables, builtinExternalizables } from './classes'
 
 export const STREAM_MAGIC      = 0xaced;
 export const STREAM_VERSION    = 5;
@@ -771,9 +772,17 @@ export class ObjectInputStream extends PrimitiveInput {
 
     private nextContent: J.Content | typeof NO_CONTENT = NO_CONTENT;
 
-    constructor(data: Uint8Array | ObjectInputStreamParser) {
+    constructor(data: Uint8Array | ObjectInputStreamParser, options?: {
+        initialSerializables?: Map<string, new () => Serializable>,
+        initialExternalizables?: Map<string, new () => Externalizable>,
+    }) {
         super();
         this.parser = data instanceof ObjectInputStreamParser ? data : new ObjectInputStreamParser(data)
+
+        const initialSerializables = options?.initialSerializables ?? builtinSerializables;
+        for (const [k,v] of initialSerializables.entries()) this.registerSerializable(k, v);
+        const initialExternalizables = options?.initialExternalizables ?? builtinExternalizables;
+        for (const [k,v] of initialExternalizables.entries()) this.registerExternalizable(k, v);
     }
 
     protected readNextContent(): J.Content {

@@ -1,4 +1,4 @@
-import type { ObjectInputStream, Serializable } from ".";
+import type { Serializable, Externalizable, ObjectInputStream } from ".";
 import { InvalidObjectException } from './exceptions';
 
 export namespace java {
@@ -129,3 +129,26 @@ export namespace java {
         }
     }
 }
+
+export const builtinSerializables = new Map<string, new () => Serializable>([
+    ["java.lang.Byte", java.lang.Byte],
+    ["java.lang.Short", java.lang.Short],
+    ["java.lang.Integer", java.lang.Integer],
+    ["java.lang.Long", java.lang.Long],
+    ["java.lang.Float", java.lang.Float],
+    ["java.lang.Double", java.lang.Double],
+    ["java.lang.Character", java.lang.Character],
+    ["java.lang.Boolean", java.lang.Boolean],
+
+    ["java.util.ArrayList", java.util.ArrayList],
+    ["java.util.LinkedList", java.util.LinkedList],
+    ["java.util.ArrayDeque", java.util.ArrayDeque],
+    ["java.util.HashSet", java.util.HashSet],
+    ["java.util.LinkedHashSet", java.util.LinkedHashSet],
+    ["java.util.TreeSet", java.util.TreeSet],
+    ["java.util.HashMap", java.util.HashMap],
+    ["java.util.LinkedHashMap", java.util.LinkedHashMap],
+    ["java.util.TreeMap", java.util.TreeMap],
+]);
+
+export const builtinExternalizables = new Map<string, new () => Externalizable>([]);
