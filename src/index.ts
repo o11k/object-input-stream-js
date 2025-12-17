@@ -1,3 +1,15 @@
+import {
+    StreamCorruptedException,
+    EOFException,
+    UTFDataFormatException,
+    IllegalStateException,
+    IndexOutOfBoundsException,
+    OptionalDataException,
+    ClassNotFoundException,
+    NotActiveException,
+    NotImplementedError,
+} from './exceptions';
+
 export const STREAM_MAGIC      = 0xaced;
 export const STREAM_VERSION    = 5;
 
@@ -24,25 +36,6 @@ export const SC_BLOCK_DATA     = 0x08;  // if SC_EXTERNALIZABLE
 export const SC_SERIALIZABLE   = 0x02;
 export const SC_EXTERNALIZABLE = 0x04;
 export const SC_ENUM           = 0x10;
-
-
-export class JavaException extends Error {}
-export class IOException extends JavaException {}
-export class ObjectStreamException extends IOException {}
-export class StreamCorruptedException extends ObjectStreamException {}
-export class EOFException extends IOException {}
-export class UTFDataFormatException extends IOException {}
-export class RuntimeException extends JavaException {}
-export class IllegalStateException extends RuntimeException {}
-export class IndexOutOfBoundsException extends RuntimeException {}
-export class OptionalDataException extends ObjectStreamException {}
-export class InvalidClassException extends ObjectStreamException {}
-export class ReflectiveOperationException extends JavaException {}
-export class ClassNotFoundException extends ReflectiveOperationException {}
-export class NotActiveException extends ObjectStreamException {}
-export class InvalidObjectException extends ObjectStreamException {}
-
-export class NotImplementedError extends Error {}  // TODO remove before publishing
 
 export const JAVAOBJ_SYMBOL = Symbol("javaobj");
 

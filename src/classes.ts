@@ -1,4 +1,5 @@
-import { InvalidObjectException, J, ObjectInputStream, Serializable } from ".";
+import type { ObjectInputStream, Serializable } from ".";
+import { InvalidObjectException } from './exceptions';
 
 export namespace java {
     export namespace lang {
