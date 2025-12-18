@@ -183,4 +183,9 @@ test("object equality vs sameness", () => {
     // Equal but not same between pairs
     expect(obj1_1).not.toBe(obj2_1);
     expect(obj1_1).toEqual(obj2_1);
+
+    // After reset, properly forgetting references
+    const obj1_after_reset = ois.readObject();
+    expect(obj1_after_reset).not.toBe(obj1_1)
+    expect(obj1_after_reset).toEqual(obj1_1)
 })

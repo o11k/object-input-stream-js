@@ -422,6 +422,9 @@ public class GenerateTests {
         oos.writeObject(obj1);
         oos.writeObject(obj2);
 
+        oos.reset();
+        oos.writeObject(obj1);
+
         oos.close();
         outSerialized.close();
     }
