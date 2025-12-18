@@ -6,14 +6,6 @@ import fs from 'node:fs';
 import { ObjectInputStream, J } from '../src/index';
 
 const PATH_DIR = "tests/tmp";
-const PRIMITIVES_FILENAME = "primitives"
-const FLOATS_FILENAME = "floats"
-const INT_LIMITS_FILENAME = "int-limits"
-const PRIMITIVE_WRAPPERS_FILENAME = "primitive-wrappers";
-const STRINGS_FILENAME = "strings";
-const PRIMITIVE_ARR_FILENAME = "array-primitive";
-const SAME_TWICE_FILENAME = "same-obj-twice";
-const ARR_2D_FILENAME = "array-2d";
 
 function readExpectedFile(baseFilename: string): any[] {
     const data = fs.readFileSync(PATH_DIR + "/" + baseFilename + ".txt")
@@ -35,6 +27,7 @@ function toFloat32(d: number): number {
     return new Float32Array([d])[0];
 }
 
+const PRIMITIVES_FILENAME = "primitives"
 test("sanity: primitives", () => {
     const ois = new ObjectInputStream(readSerializedFile(PRIMITIVES_FILENAME));
 
@@ -48,6 +41,7 @@ test("sanity: primitives", () => {
     expect(ois.readBoolean()).toBe(true)
 })
 
+const FLOATS_FILENAME = "floats"
 test("float edge cases", () => {
     const ois = new ObjectInputStream(readSerializedFile(FLOATS_FILENAME));
 
@@ -70,6 +64,7 @@ test("float edge cases", () => {
     expect(ois.readDouble()).toBe(1e-310);
 })
 
+const INT_LIMITS_FILENAME = "int-limits"
 test("integer limits", () => {
     const ois = new ObjectInputStream(readSerializedFile(INT_LIMITS_FILENAME));
 
@@ -106,6 +101,7 @@ test("integer limits", () => {
     expect(ois.readShort()).toBe( Math.pow(2, 16-1) - 1);
 })
 
+const PRIMITIVE_WRAPPERS_FILENAME = "primitive-wrappers";
 test("primitive wrappers: with handlers", () => {
     const ois = new ObjectInputStream(readSerializedFile(PRIMITIVE_WRAPPERS_FILENAME));
 
@@ -134,6 +130,7 @@ test("primitive wrappers: without handlers", () => {
     expect(ois.readObject()).toMatchObject({value: true    });  // Boolean
 })
 
+const STRINGS_FILENAME = "strings";
 test("strings", () => {
     const ois = new ObjectInputStream(readSerializedFile(STRINGS_FILENAME));
 
@@ -147,6 +144,7 @@ test("strings", () => {
     expect(ois.readObject()).toBe(gigastring);
 })
 
+const PRIMITIVE_ARR_FILENAME = "array-primitive";
 test("array of primitives", () => {
     const ois = new ObjectInputStream(readSerializedFile(PRIMITIVE_ARR_FILENAME), {
         initialSerializables: new Map(),  // No primitive wrapper handlers, to prove that values are actually primitive
@@ -159,15 +157,7 @@ test("array of primitives", () => {
     expect(Array.from(found)).toEqual(expected);
 })
 
-test("same object twice", () => {
-    const ois = new ObjectInputStream(readSerializedFile(SAME_TWICE_FILENAME));
-
-    const obj1 = ois.readObject();
-    const obj2 = ois.readObject();
-
-    expect(obj1).toBe(obj2);
-})
-
+const ARR_2D_FILENAME = "array-2d";
 test("2d array", () => {
     const ois = new ObjectInputStream(readSerializedFile(ARR_2D_FILENAME));
 
@@ -175,4 +165,14 @@ test("2d array", () => {
     const found = Array.from(ois.readObject() as J.Array, item => Array.from(item));
 
     expect(found).toEqual(expected);
+})
+
+const SAME_TWICE_FILENAME = "same-obj-twice";
+test("same object twice", () => {
+    const ois = new ObjectInputStream(readSerializedFile(SAME_TWICE_FILENAME));
+
+    const obj1 = ois.readObject();
+    const obj2 = ois.readObject();
+
+    expect(obj1).toBe(obj2);
 })
