@@ -200,3 +200,57 @@ test("object equality vs sameness", () => {
     expect(typeof handle1).toBe("number");
     expect(handle1).toBe(handle2);
 })
+
+test.todo("0-length blocks before object")
+test.todo("0-length blocks before block")
+test.todo("primitive crossing block boundaries")
+test.todo("circular reference")
+test.todo("multiple resets")
+test.todo("eof after reset")
+
+
+// Object tests
+// Each with + without handler?
+
+test.todo("serializable without writeObject")
+test.todo("serializable with writeObject")
+test.todo("writeObject that doesn't read all annotations")
+test.todo("writeObject that doesn't read fields")
+test.todo("writeObject that reads fields after annotations")  // Without handler == error
+test.todo("readExternal isn't called on parent classes")
+test.todo("classDesc gets handler before its object")  // The docs conflict on it, so must check
+
+// User errors
+
+test.todo("readFields twice")
+test.todo("readFields outside readObject")
+test.todo("readFields inside readExternal")
+test.todo("readObject where fields aren't in the start, without handler")  // Can corrupt stream
+// test("externalizable without readExternal")  // ts prevents that?
+test.todo("externalizable PROTOCOL_VERSION_1 without handler")
+test.todo("unmatching serialVersionUID")
+test.todo("serializable reading too much")
+test.todo("externalizable reading too much")
+test.todo("externalizable PROTOCOL_VERSION_1 reading too much")  // Corrupts stream
+test.todo("read too much")  // primitive + object cases
+test.todo("readObject when in block")
+test.todo("read[primitive] when not in block")
+test.todo("serializable parent class in java but not js")
+
+// Errors in stream
+
+test.todo("utf-8 error")
+test.todo("prevObject doesn't exist")
+test.todo("replaceObject multiple handles")  // unrealistic condition
+test.todo("empty file")
+test.todo("corruped STREAM_MAGIC or STREAM_VERSION")
+test.todo("unknown TC")
+test.todo("object with null classDesc")
+test.todo("not serializable and not externalizable")
+test.todo("annotations without TC_ENDBLOCKDATA")
+test.todo("bad field typecode")
+test.todo("bad array classDesc")
+test.todo("eof in middle of primitive / object")
+
+// TODO enums
+// TODO classes and classDescs
