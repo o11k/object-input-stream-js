@@ -503,7 +503,10 @@ export class ObjectInputStreamParser extends PrimitiveInput {
 
         // Create object
         const result = new Ctor();
-        this.handleTable.newHandle(result);
+        const handle = this.handleTable.newHandle(result);
+
+        if (result instanceof J.SerializableFallback)
+            result.$handle = handle;
 
         // Call readObject methods
         const classDescs = this._getClassDescHierarchy(classDesc);

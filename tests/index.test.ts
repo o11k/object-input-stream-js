@@ -176,16 +176,27 @@ test("object equality vs sameness", () => {
     const obj1_2 = ois.readObject();
     const obj2_2 = ois.readObject();
 
+    expect(obj1_1).not.toBeNull();
+    expect(obj2_1).not.toBeNull();
+
     // The pairs are the same (===)
     expect(obj1_1).toBe(obj1_2);
     expect(obj2_1).toBe(obj2_2);
 
     // Equal but not same between pairs
+    // @ts-expect-error
+    obj2_1!.$handle = obj1_1!.$handle;  // They only differ in handle, so solve it
     expect(obj1_1).not.toBe(obj2_1);
-    expect(obj1_1).toEqual(obj2_1);
+    expect(obj1_1).toMatchObject(obj2_1!);
 
     // After reset, properly forgetting references
     const obj1_after_reset = ois.readObject();
     expect(obj1_after_reset).not.toBe(obj1_1)
     expect(obj1_after_reset).toEqual(obj1_1)
+
+    // View undocumented internal state to prove reset works properly
+    const handle1 = (obj1_1           as any).$handle;
+    const handle2 = (obj1_after_reset as any).$handle;
+    expect(typeof handle1).toBe("number");
+    expect(handle1).toBe(handle2);
 })
