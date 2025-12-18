@@ -358,6 +358,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             case TC_CLASS:
             case TC_ARRAY:
             case TC_STRING:
+            case TC_LONGSTRING:
             case TC_ENUM:
             case TC_CLASSDESC:
             case TC_PROXYCLASSDESC:

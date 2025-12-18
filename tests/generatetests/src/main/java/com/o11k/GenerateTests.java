@@ -3,7 +3,7 @@ package com.o11k;
 import java.io.*;
 import java.lang.reflect.*;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.stream.*;
 
 class Randomizer {
     static final float CHANCE_NAN = 0.05f;
@@ -361,11 +361,34 @@ public class GenerateTests {
         outSerialized.close();
     }
 
+    static final String STRINGS_FILENAME = "strings";
+    static void genStrings() throws Exception {
+        final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + STRINGS_FILENAME + ".ser");
+        final ObjectOutputStream oos = new ObjectOutputStream(outSerialized);
+
+        // A string of all utf-16 char codes in order (0x0000-0xffff)
+        String gigaString = IntStream
+            .rangeClosed(0, 0xffff)
+            .mapToObj(i -> String.valueOf((char)i))
+            .collect(Collectors.joining());
+
+        oos.writeObject("");
+        oos.writeObject("\0");
+        oos.writeObject("a".repeat(0xffff));    // Longest TC_STRING
+        oos.writeObject("b".repeat(0xffff+1));  // Shortest TC_LONGSTRING
+        oos.writeObject(gigaString);
+
+        oos.close();
+        outSerialized.close();
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
+
         genPrimitives();
         genFloats();
         genIntLimits();
         genPrimitiveWrappers();
+        genStrings();
     }
 }

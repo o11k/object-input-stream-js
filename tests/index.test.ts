@@ -16,6 +16,7 @@ const PRIMITIVES_FILENAME = "primitives"
 const FLOATS_FILENAME = "floats"
 const INT_LIMITS_FILENAME = "int-limits"
 const PRIMITIVE_WRAPPERS_FILENAME = "primitive-wrappers";
+const STRINGS_FILENAME = "strings";
 
 function readExpectedFile(baseFilename: string): any[] {
     const data = fs.readFileSync(PATH_DIR + "/" + baseFilename + ".txt")
@@ -134,4 +135,17 @@ test("primitive wrappers: without handlers", () => {
     expect(ois.readObject()).toMatchObject({value: 5n      });  // Long
     expect(ois.readObject()).toMatchObject({value: 5       });  // Short
     expect(ois.readObject()).toMatchObject({value: true    });  // Boolean
+})
+
+test("strings", () => {
+    const ois = new ObjectInputStream(readSerializedFile(STRINGS_FILENAME));
+
+    const gigastring = Array.from({length: 0xffff+1}, (_, i) => String.fromCharCode(i)).join('');
+    expect(gigastring.length).toBe(0xffff+1);
+
+    expect(ois.readObject()).toBe("");
+    expect(ois.readObject()).toBe("\0");
+    expect(ois.readObject()).toBe("a".repeat(0xffff));
+    expect(ois.readObject()).toBe("b".repeat(0xffff+1));
+    expect(ois.readObject()).toBe(gigastring);
 })
