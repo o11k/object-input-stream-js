@@ -43,9 +43,9 @@ export const JAVAOBJ_SYMBOL = Symbol("javaobj");
 export namespace J {
     export type Contents = Content[];
     export type Content = Object | BlockData;
-    export type BlockData = Uint8Array;
+    export class BlockData extends Uint8Array {};
     export type Object =
-        Serializable | Externalizable
+        Serializable | Externalizable  // | any, because of readReplace
       | Class
       | Array
       | String
@@ -62,65 +62,67 @@ export namespace J {
     }
 
     export class ExternalizableFallback implements Externalizable {
-        $classDesc: ClassDesc | null = null;
+        classDesc: ClassDesc | null = null;
         annotations: Contents = [];
 
         readExternal(ois: ObjectInputStream, classDesc: J.ClassDesc): void {
-            this.$classDesc = classDesc;
+            this.classDesc = classDesc;
             this.annotations = ois.readAllContents();
         }
     }
 
-    export type ObjectInstanceInternal = {
-        classDesc: ClassDesc | null,
-        classData: Map<string, ClassData>
+    export class Class {
+        classDesc: ClassDesc | null = null;
     }
-    export type ClassData =
-        {values: Values, annotation?: Contents}
-      | {values?: Values, annotation: Contents}
+
+    export class Array extends globalThis.Array {
+        classDesc: ClassDesc | null = null;
+    }
+
+    export class Enum {
+        classDesc: ClassDesc | null = null;
+        name: string = "";
+    }
+
     export type Values = Map<string, Object | Primitive>
 
-    // TODO: unify with ClassDesc?
-    export type Class = {
-        type: "class"
-        classDesc: ClassDesc | null,
+    export type ClassDesc = NonProxyClassDesc //| ProxyClassDesc;
+    export class BaseClassDesc {}
+    //export class ProxyClassDesc extends BaseClassDesc {}
+    export class NonProxyClassDesc extends BaseClassDesc {
+        className: string = "";
+        serialVersionUID: bigint = -1n;
+        flags: number = -1;
+        fields: FieldDesc[] = [];
+        annotations: Contents = [];
+        super: ClassDesc | null = null;
     }
 
-    export type Array = (Object | Primitive)[] & {
-        [JAVAOBJ_SYMBOL]: {classDesc: ClassDesc | null}
-    };
-
-    export type Enum = {
-        type: "enum",
-        classDesc: ClassDesc | null,
-        name: string,
-    }
-
-    export type ClassDesc = NonProxyClassDesc //| ProxyClassDesc
-    export type NonProxyClassDesc = {
-        type: "classDesc",
-        proxy: false,
-        className: string,
-        serialVersionUID: bigint,
-        flags: number,
-        fields: FieldDesc[],
-        annotation: Contents,
-        super: ClassDesc | null,
-    }
-    //export type ProxyClassDesc = unknown  // TODO
+    export type FieldTypecode = PrimitiveTypecode | ObjectTypecode;
+    export type PrimitiveTypecode = 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z';
+    export type ObjectTypecode = '[' | 'L';
 
     export type FieldDesc = PrimitiveDesc | ObjectDesc
-    export type FieldTypecode = 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z' | '[' | 'L'
     export type PrimitiveDesc = {
-        typecode: 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z',
+        typecode: PrimitiveTypecode,
         fieldName: string,
     }
     export type ObjectDesc = {
-        typecode: 'L' | '[',
+        typecode: ObjectTypecode,
         fieldName: string,
         className: String,
     }
-    export type Primitive = number | bigint | boolean | string //=char
+
+    export type Primitive = byte | char | double | float | int | long | short | bool;
+    export type byte = number;
+    export type char = string;
+    export type double = number;
+    export type float = number;
+    export type int = number;
+    export type long = bigint;
+    export type short = number;
+    export type bool = boolean;
+
     export type String = string
 }
 
@@ -163,61 +165,61 @@ export abstract class ByteInput {
 }
 
 export abstract class PrimitiveInput extends ByteInput {
-    readBoolean(): boolean {
+    readBoolean(): J.bool {
         return ByteArray.getBoolean(this.readFully(1));
     }
 
-    readByte(): number {
+    readByte(): J.byte {
         return ByteArray.getByte(this.readFully(1));
     }
 
-    readUnsignedByte(): number {
+    readUnsignedByte(): J.int {
         return ByteArray.getUnsignedByte(this.readFully(1));
     }
 
-    readChar(): string {
+    readChar(): J.char {
         return ByteArray.getChar(this.readFully(2));
     }
 
-    readShort(): number {
+    readShort(): J.short {
         return ByteArray.getShort(this.readFully(2));
     }
 
-    readUnsignedShort(): number {
+    readUnsignedShort(): J.int {
         return ByteArray.getUnsignedShort(this.readFully(2));
     }
 
-    readInt(): number {
+    readInt(): J.int {
         return ByteArray.getInt(this.readFully(4));
     }
 
-    readLong(): bigint {
+    readLong(): J.long {
         return ByteArray.getLong(this.readFully(8));
     }
 
-    readFloat(): number {
+    readFloat(): J.float {
         return ByteArray.getFloat(this.readFully(4));
     }
 
-    readDouble(): number {
+    readDouble(): J.double {
         return ByteArray.getDouble(this.readFully(8));
     }
 
-    readUTF(): string {
+    readUTF(): J.String {
         return this.readUTFBody(this.readUnsignedShort());
     }
 
-    readLongUTF(): string {
+    readLongUTF(): J.String {
         const length = this.readLong();
         if (length > Number.MAX_SAFE_INTEGER) {
-            throw new NotImplementedError(`string longer than ${Number.MAX_SAFE_INTEGER} bytes`);
+            throw new NotImplementedError("string longer than Number.MAX_SAFE_INTEGER bytes");
         }
         return this.readUTFBody(Number(length));
     }
 
     // https://docs.oracle.com/javase/8/docs/api/java/io/DataInput.html#readUTF--
-    readUTFBody(length: number): string {
-        const bytes = this.readFully(length);
+    readUTFBody(byteLength: number): J.String {
+        const bytes = this.readFully(byteLength);
 
         const resultChars = new Uint16Array(bytes.length);
         let resultCharsOffset = 0;
@@ -244,7 +246,7 @@ export abstract class PrimitiveInput extends ByteInput {
                 if ((c & 0b1100_0000) !== 0b1000_0000) throw new UTFDataFormatException();
                 resultChars[resultCharsOffset] = (((a & 0x0F) << 12) | ((b & 0x3F) << 6) | (c & 0x3F));
             }
-            //  Encoding error
+            // Encoding error
             else {
                 throw new UTFDataFormatException();
             }
@@ -331,8 +333,10 @@ export class ObjectInputStreamParser extends PrimitiveInput {
     }
 
     public nextContent(endBlockEOF=false): J.Content {
+        // Automatically in endBlockEOF mode if inside the annotations of a Serializable object or a PROTOCOL_VERSION_2 Externalizable object
         if (this.contextStack.length > 0) {
-            const flags = this.contextStack[this.contextStack.length-1].classDesc.flags;
+            const context = this.contextStack[this.contextStack.length-1];
+            const flags = context.classDesc.flags;
             if (((flags & SC_SERIALIZABLE) && (flags & SC_WRITE_METHOD)) ||
                 ((flags & SC_EXTERNALIZABLE) && (flags & SC_BLOCK_DATA)))
                 endBlockEOF = true;
@@ -340,7 +344,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
 
         let tc = this.peek1();
 
-        // This is technically an "object" and not a "content", but in practice it doesn't matter
+        // TC_RESET is technically an "object" and not a "content", but in practice it doesn't matter
         while (tc === TC_RESET) {
             this.handleTable.reset();
             this.read1();
@@ -375,15 +379,14 @@ export class ObjectInputStreamParser extends PrimitiveInput {
 
     public parseContents(endBlockEOF=false): J.Contents {
         const result = [];
-        while (true) {
+        while (!this.eof()) {
             try {
                 result.push(this.nextContent(endBlockEOF));
             } catch (ex) {
-                if (ex instanceof EOFException) {
+                if (ex instanceof EOFException)
                     break;
-                } else {
+                else
                     throw ex;
-                }
             }
         }
         return result;
@@ -402,7 +405,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             default:
                 throw new StreamCorruptedException("Unknown block data tc: " + tc);
         }
-        return this.readFully(size);
+        return new J.BlockData(this.readFully(size));
     }
 
     protected parseObject(): J.Object {
@@ -535,9 +538,6 @@ export class ObjectInputStreamParser extends PrimitiveInput {
             this.contextStack.pop();
         }
 
-        if (Ctor === J.SerializableFallback)
-            (result as J.SerializableFallback).$classDesc = classDesc;
-
         // Replace result if applicable
         if (result.readResolve !== undefined) {
             const replaced = result.readResolve();
@@ -579,10 +579,8 @@ export class ObjectInputStreamParser extends PrimitiveInput {
         const tc = this.read1();
         if (tc !== TC_CLASS) throw new StreamCorruptedException("Unknown reference tc: " + tc);
 
-        const result: J.Class = {
-            type: "class",
-            classDesc: this.parseClassDesc(),
-        };
+        const result = new J.Class();
+        result.classDesc = this.parseClassDesc();
         const handle = this.handleTable.newHandle(result);
         // @ts-expect-error
         result.handle = handle;
@@ -593,20 +591,23 @@ export class ObjectInputStreamParser extends PrimitiveInput {
         const tc = this.read1();
         if (tc !== TC_ARRAY) throw new StreamCorruptedException("Unknown array tc: " + tc);
 
-        const result: (J.Object | J.Primitive)[] = [];
+        const result = new J.Array();
         const classDesc = this.parseClassDesc();
+        result.classDesc = classDesc;
+
         if (classDesc === null || !classDesc.className.startsWith("["))
             throw new StreamCorruptedException("Array class name doesn't begin with [: " + classDesc!.className);
         const typecode = classDesc.className[1];
-        const handle = this.handleTable.newHandle(result as J.Array);
+
+        const handle = this.handleTable.newHandle(result);
+        // @ts-expect-error
+        result.handle = handle;
+
         const size = this.readInt();
         for (let i=0; i<size; i++) {
             result.push(this.parseValue(typecode));
         }
-        return Object.assign(result, {[JAVAOBJ_SYMBOL]: {
-            classDesc,
-            handle,
-        }});
+        return result;
     }
 
     protected parseNewString(): J.String {
@@ -629,41 +630,37 @@ export class ObjectInputStreamParser extends PrimitiveInput {
     protected parseNewEnum(): J.Enum {
         const tc = this.read1();
         if (tc !== TC_ENUM) throw new StreamCorruptedException("Unknown enum tc: " + tc);
-        const result: Partial<J.Enum> = {};
-        const classDesc = this.parseClassDesc();
+        const result = new J.Enum();
+        result.classDesc = this.parseClassDesc();
         const handle = this.handleTable.newHandle(result as J.Enum)
+        // @ts-expect-error
+        result.handle = handle;
         const name = this.parseObject();
         if (typeof name !== "string") {
             throw new StreamCorruptedException("Enum name must be a String object");
         }
-        return Object.assign(result, {type: "enum", classDesc, name});
+        result.name = name;
+        
+        return result;
     }
 
     protected parseNewClassDesc(): J.ClassDesc {
         const tc = this.read1();
-        if (tc === TC_PROXYCLASSDESC) throw new NotImplementedError("proxy classes");
+        if (tc === TC_PROXYCLASSDESC) throw new NotImplementedError("proxy class");
         if (tc !== TC_CLASSDESC) throw new StreamCorruptedException("Unknown new class desc tc: " + tc);
 
-        const result = {
-            type: "classDesc" as "classDesc",
-            proxy: false as false
-        };
-        const className = this.readUTF();
-        const serialVersionUID = this.readLong();
-        const handle = this.handleTable.newHandle(result as J.ClassDesc);
-        const flags = this.readUnsignedByte();
-        const fields = this.parseFields();
-        const annotation = this.parseClassAnnotation();
-        const super_ = this.parseClassDesc();
-        return Object.assign(result, {
-            className,
-            serialVersionUID,
-            handle,
-            flags,
-            fields,
-            annotation,
-            super: super_
-        });
+        const result = new J.NonProxyClassDesc();
+        result.className = this.readUTF();
+        result.serialVersionUID = this.readLong();
+        const handle = this.handleTable.newHandle(result);
+        // @ts-expect-error
+        result.handle = handle;
+        result.flags = this.readUnsignedByte();
+        result.fields = this.parseFields();
+        result.annotations = this.parseClassAnnotation();
+        result.super = this.parseClassDesc();
+
+        return result;
     }
 
     protected parseFields(): J.FieldDesc[] {
@@ -702,10 +699,11 @@ export class ObjectInputStreamParser extends PrimitiveInput {
                 this.read1();
                 return null;
             case TC_REFERENCE:
-                // TODO: check that's it's a classdesc
-                const obj = this.parsePrevObject() as J.ClassDesc;
-                if (typeof obj !== "object" || obj === null || obj instanceof Array || obj.type !== "classDesc")
-                    throw new StreamCorruptedException();
+                const obj = this.parsePrevObject();
+                if (!(obj instanceof J.BaseClassDesc))
+                    throw new StreamCorruptedException("Invalid classDesc reference");
+                if (!(obj instanceof J.NonProxyClassDesc))
+                    throw new NotImplementedError("proxy class");
                 return obj;
             default:
                 throw new StreamCorruptedException("Unknown class desc tc: " + tc);
@@ -722,7 +720,7 @@ export class ObjectInputStreamParser extends PrimitiveInput {
     protected parseException(): J.Exception {
         const tc = this.read1();
         if (tc !== TC_EXCEPTION) throw new StreamCorruptedException("Unknown exception tc: " + tc);
-        throw new NotImplementedError("Exceptions in stream");
+        throw new NotImplementedError("Exception");
     }
 
     private _parseEndBlockTerminatedContents(): J.Contents {
@@ -764,11 +762,10 @@ export class ObjectInputStreamParser extends PrimitiveInput {
 }
 
 const NO_CONTENT = Symbol("no content");
-const CONTENT_EOF = Symbol("content eof");
 
 export class ObjectInputStream extends PrimitiveInput {
     private parser: ObjectInputStreamParser;
-    private currBlock: Uint8Array | null = null;
+    private currBlock: J.BlockData | null = null;
     private blockOffset: number = 0;
 
     private nextContent: J.Content | typeof NO_CONTENT = NO_CONTENT;
@@ -795,20 +792,23 @@ export class ObjectInputStream extends PrimitiveInput {
             return result;
         }
 
-        return this.parser.nextContent();
+        let content = this.parser.nextContent();
+
+        // Skip empty blocks
+        while ((content instanceof J.BlockData) && content.length === 0)
+            content = this.parser.nextContent();
+
+        return content;
     }
 
     read1() {
         // Ensure you're inside a block
-        while (this.currBlock === null) {
-            let content = this.readNextContent();
-            if (!(content instanceof Uint8Array)) {
+        if (this.currBlock === null) {
+            const content = this.readNextContent();
+            if (!(content instanceof J.BlockData)) {
                 this.nextContent = content;
                 return -1;
             }
-
-            // Skip empty blocks
-            if (content.length === 0) continue;
 
             this.currBlock = content;
             this.blockOffset = 0;
@@ -832,8 +832,7 @@ export class ObjectInputStream extends PrimitiveInput {
             throw new OptionalDataException();
 
         const content = this.readNextContent();
-        // TODO readResolve can return a Uint8Array / Serializable classes can descend from it
-        if (content instanceof Uint8Array) {
+        if (content instanceof J.BlockData) {
             this.nextContent = content;
             throw new OptionalDataException();
         }
