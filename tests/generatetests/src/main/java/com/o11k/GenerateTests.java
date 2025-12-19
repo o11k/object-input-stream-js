@@ -390,7 +390,16 @@ public class GenerateTests {
         oos.writeObject(obj2);
 
         oos.reset();
+        oos.reset();
+        oos.reset();
+
         oos.writeObject(obj1);
+    }
+
+    static void genCircular(ObjectOutputStream oos) throws Exception {
+        IntAndObj obj = new IntAndObj(5, null);
+        obj.obj = obj;
+        oos.writeObject(obj);
     }
 
     interface ThrowingRunnable {void run() throws Exception;}
@@ -440,5 +449,6 @@ public class GenerateTests {
         withOos("arrays", GenerateTests::genArrays);
         withOos("obj-ref-vs-eq", GenerateTests::genObjRef);
         genBlockEdgeCases("blocks");
+        withOos("circular", GenerateTests::genCircular);
     }
 }

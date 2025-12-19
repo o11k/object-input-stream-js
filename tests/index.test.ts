@@ -228,8 +228,15 @@ test("block data edge cases", () => {
     expect(obj1).not.toBe(obj2);
 })
 
-test.todo("circular reference")
-test.todo("multiple resets")
+const CIRCULAR_FILENAME = "circular"
+test("circular reference", () => {
+    const ois = new ObjectInputStream(readSerializedFile(CIRCULAR_FILENAME));
+
+    const obj = ois.readObject();
+    expect(obj).toBeInstanceOf(J.SerializableFallback);
+    expect((obj as any)?.obj).toBe(obj);
+})
+
 test.todo("eof after reset")
 
 
