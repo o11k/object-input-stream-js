@@ -19,3 +19,5 @@ The following features are not implemented. If you desparately need them, please
 - [ ] test and/or improve classDesc and class handling
 - [ ] handle proxy classes
 - [ ] handle exceptions
+- [ ] emit AST
+- [ ] error when unmatching serialVersionUID
