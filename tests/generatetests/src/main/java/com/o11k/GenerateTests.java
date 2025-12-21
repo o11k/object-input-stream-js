@@ -396,12 +396,6 @@ public class GenerateTests {
         oos.writeObject(obj1);
     }
 
-    static void genCircular(ObjectOutputStream oos) throws Exception {
-        IntAndObj obj = new IntAndObj(5, null);
-        obj.obj = obj;
-        oos.writeObject(obj);
-    }
-
     interface ThrowingRunnable {void run() throws Exception;}
     static void genBlockEdgeCases(String filename) throws Exception {
         final FileOutputStream outSerialized = new FileOutputStream(PATH_DIR + "/" + filename + ".ser");
@@ -438,6 +432,65 @@ public class GenerateTests {
         outSerialized.close();
     }
 
+    static void genCircular(ObjectOutputStream oos) throws Exception {
+        IntAndObj obj = new IntAndObj(5, null);
+        obj.obj = obj;
+        oos.writeObject(obj);
+    }
+
+    static class SerNoW implements Serializable {
+        int i; SerNoW(int i) {this.i = i;}
+    }
+    static class SerW implements Serializable {
+        int i; SerW(int i) {this.i = i;}
+        private void writeObject(ObjectOutputStream out) throws IOException {out.defaultWriteObject();}
+    }
+    static class EmptySerW implements Serializable {private void writeObject(ObjectOutputStream out) throws IOException {}}
+    static class SerWExtra implements Serializable {
+        int i; SerWExtra(int i) {this.i = i;}
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.defaultWriteObject();
+            out.writeObject(new EmptySerW());
+        }
+    }
+    static class SerWNoFields implements Serializable {
+        int i; SerWNoFields(int i) {this.i = i;}
+        private void writeObject(ObjectOutputStream out) throws IOException {out.writeInt(this.i);}
+    }
+    static class SerWMisplacedFields implements Serializable {
+        int i; SerWMisplacedFields(int i) {this.i = i;}
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.writeInt(123);
+            out.defaultWriteObject();
+            out.writeInt(456);
+        }
+    }
+    static class ExtParent implements Externalizable {
+        public void writeExternal(ObjectOutput out) throws IOException {}
+        public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {}
+    }
+    static class ExtChild extends ExtParent {
+        int i; ExtChild(int i) {this.i = i;}
+        public void writeExternal(ObjectOutput out) throws IOException {
+            out.writeInt(this.i);
+            out.writeUTF("testicle");
+            out.writeObject(new EmptySerW());
+        }
+        public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {}
+    }
+    static void genHandlers(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(new SerNoW(1));
+        oos.writeObject(new SerW(2));
+        oos.writeObject(new SerWExtra(3));
+        oos.writeObject(new SerWNoFields(4));
+        oos.writeObject(new SerWMisplacedFields(5));
+        oos.writeObject(new ExtChild(6));
+
+        // oos.reset();
+        // oos.useProtocolVersion(1);
+        // oos.writeObject(new ExtChild(7));
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
 
@@ -450,5 +503,6 @@ public class GenerateTests {
         withOos("obj-ref-vs-eq", GenerateTests::genObjRef);
         genBlockEdgeCases("blocks");
         withOos("circular", GenerateTests::genCircular);
+        withOos("handlers", GenerateTests::genHandlers);
     }
 }

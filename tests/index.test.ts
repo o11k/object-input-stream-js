@@ -3,7 +3,10 @@
 
 import fs from 'node:fs';
 
-import { ObjectInputStream, J, TC_REFERENCE, TC_OBJECT, TC_NULL, TC_CLASSDESC, SC_SERIALIZABLE, TC_STRING, TC_BLOCKDATA, TC_ARRAY, TC_ENDBLOCKDATA, SC_WRITE_METHOD } from '../src/index';
+import {
+    ObjectInputStream, J, Serializable, Externalizable,
+    TC_REFERENCE, TC_OBJECT, TC_NULL, TC_CLASSDESC, SC_SERIALIZABLE, TC_STRING, TC_BLOCKDATA, TC_ARRAY, TC_ENDBLOCKDATA, SC_WRITE_METHOD,
+} from '../src/index';
 import { EOFException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
 
 const PATH_DIR = "tests/tmp";
@@ -241,16 +244,108 @@ test("circular reference", () => {
 test.todo("eof after reset")
 
 
-// Object tests
-// Each with + without handler?
+test.todo("classDesc gets handle before its object")  // The docs conflict on it, so must check
 
-test.todo("serializable without writeObject")
-test.todo("serializable with writeObject")
-test.todo("writeObject that doesn't read all annotations")
-test.todo("writeObject that doesn't read fields")
-test.todo("writeObject that reads fields after annotations")  // Without handler == error
-test.todo("readExternal isn't called on parent classes")
-test.todo("classDesc gets handler before its object")  // The docs conflict on it, so must check
+const HANDLERS_FILENAME = "handlers";
+const CLASS_PREFIX = "com.o11k.GenerateTests$"
+test("handlers behavior", () => {
+    // @ts-expect-error
+    const tell = (ois: ObjectInputStream) => ois.parser.offset;
+    // @ts-expect-error
+    const seek = (ois: ObjectInputStream, offset: number) => {ois.parser.offset = offset};
+
+    class SerNoW implements Serializable {
+        i: number; constructor(i=0) {this.i = i;}
+    }
+    class SerW implements Serializable {
+        i: number; constructor(i=0) {this.i = i;}
+        writeObject(ois: ObjectInputStream) {ois.defaultReadObject();}
+    }
+    class EmptySerW implements Serializable {readObject(_ois: ObjectInputStream) {}}
+    class SerWExtra implements Serializable {
+        i: number; constructor(i=0) {this.i = i;}
+        readObject(ois: ObjectInputStream) {
+            ois.defaultReadObject();
+            // Extra is read implicitly
+        }
+    }
+    class SerWNoFields implements Serializable {
+        i_in_js: number; constructor(i=0) {this.i_in_js = i;}
+        readObject(ois: ObjectInputStream) {this.i_in_js = ois.readInt();}
+    }
+    class SerWMisplacedFields implements Serializable {
+        i: number; constructor(i=0) {this.i = i;}
+        readObject(ois: ObjectInputStream) {
+            expect(ois.readInt()).toBe(123);
+            ois.defaultReadObject();
+            expect(ois.readInt()).toBe(456);
+        }
+    }
+    class ExtParent implements Externalizable {
+        readExternal(ois: ObjectInputStream) {
+            throw new Error("This should never run")
+        }
+    }
+    class ExtChild extends ExtParent {
+        i_in_js: number; constructor(i=0) {super(); this.i_in_js = i;}
+        readExternal(ois: ObjectInputStream) {
+            this.i_in_js = ois.readInt();
+            expect(ois.readUTF()).toBe("testicle");
+        }
+    }
+
+    const oisHandlers = new ObjectInputStream(readSerializedFile(HANDLERS_FILENAME))
+    oisHandlers.registerSerializable(CLASS_PREFIX+"SerNoW", SerNoW);
+    oisHandlers.registerSerializable(CLASS_PREFIX+"SerW", SerW);
+    oisHandlers.registerSerializable(CLASS_PREFIX+"EmptySerW", EmptySerW);
+    oisHandlers.registerSerializable(CLASS_PREFIX+"SerWExtra", SerWExtra);
+    oisHandlers.registerSerializable(CLASS_PREFIX+"SerWNoFields", SerWNoFields);
+    oisHandlers.registerSerializable(CLASS_PREFIX+"SerWMisplacedFields", SerWMisplacedFields);
+    oisHandlers.registerExternalizable(CLASS_PREFIX+"ExtParent", ExtParent);
+    oisHandlers.registerExternalizable(CLASS_PREFIX+"ExtChild", ExtChild);
+
+    expect(oisHandlers.readObject()).toEqual(new SerNoW(1));
+    expect(oisHandlers.readObject()).toEqual(new SerW(2));
+
+    jest.spyOn(EmptySerW.prototype, "readObject");
+    expect(oisHandlers.readObject()).toEqual(new SerWExtra(3));
+    expect(EmptySerW.prototype.readObject).toHaveBeenCalled();
+    jest.clearAllMocks();
+    
+    expect(oisHandlers.readObject()).toEqual(new SerWNoFields(4));
+    const afterSerWNoFields = tell(oisHandlers);
+    expect(oisHandlers.readObject()).toEqual(new SerWMisplacedFields(5));
+    const afterSerWMisplacedFields = tell(oisHandlers);
+    expect(oisHandlers.readObject()).toEqual(new ExtChild(6));
+    // expect(oosHandlers.readObject()).toEqual(new ExtChild(7));  // TODO
+    
+    const oisNoHandlers = new ObjectInputStream(readSerializedFile(HANDLERS_FILENAME));
+    oisNoHandlers.registerSerializable(CLASS_PREFIX+"EmptySerW", EmptySerW);  // Registered only to check if parsed
+    
+    expect(oisNoHandlers.readObject()).toMatchObject({i: 1, $classDesc: {className: CLASS_PREFIX+"SerNoW"}});
+    expect(oisNoHandlers.readObject()).toMatchObject({i: 2, $classDesc: {className: CLASS_PREFIX+"SerW"}});
+    
+    jest.spyOn(EmptySerW.prototype, "readObject");
+    expect(oisNoHandlers.readObject()).toMatchObject({i: 3, $classDesc: {className: CLASS_PREFIX+"SerWExtra"}});
+    expect(EmptySerW.prototype.readObject).toHaveBeenCalled();
+    jest.clearAllMocks();
+
+    expect(() => oisNoHandlers.readObject()).toThrow(StreamCorruptedException);
+    seek(oisNoHandlers, afterSerWNoFields);
+
+    expect(() => oisNoHandlers.readObject()).toThrow(StreamCorruptedException);
+    seek(oisNoHandlers, afterSerWMisplacedFields);
+
+    const externalizable = oisNoHandlers.readObject() as J.ExternalizableFallback;
+    expect(externalizable).toMatchObject({classDesc: {className: CLASS_PREFIX+"ExtChild"}});
+    expect(externalizable.annotations.length).toBe(2);
+    expect(new Uint8Array(externalizable.annotations[0] as J.BlockData)).toEqual(new Uint8Array([
+        0,0,0,6,
+        0,"testicle".length,
+        ...new TextEncoder().encode("testicle"),
+    ]))
+    expect(externalizable.annotations[1]).toEqual(new EmptySerW())
+})
 
 // User errors
 
@@ -448,3 +543,4 @@ test("eof in middle of primitive / object", () => {
 
 // TODO enums
 // TODO classes and classDescs
+// TODO sudden death: a million random objects and primitives that reference each other

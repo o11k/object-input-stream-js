@@ -21,3 +21,4 @@ The following features are not implemented. If you desparately need them, please
 - [ ] handle exceptions
 - [ ] emit AST
 - [ ] error when unmatching serialVersionUID
+- [ ] PROTOCOL_VERSION_1 externalizables
