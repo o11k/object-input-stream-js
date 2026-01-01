@@ -129,12 +129,17 @@ export class ObjectInputStream {
         return !this.blockDataMode;
     }
     protected peek1(): number {
-        const result = this.read1();
-        if (result > 0) {
-            this.offset--;
-            this.remainingInBlock++;
+        if (!this.blockDataMode)
+            return (this.offset < this.data.length) ? this.data[this.offset] : -1;
+
+        if (this.remainingInBlock === 0)
+            this.refillBlockData();
+        if (this.remainingInBlock > 0) {
+            this.remainingInBlock;
+            return this.data[this.offset];
+        } else {
+            return -1;
         }
-        return result;
     }
     protected peekByte(): number {
         const result = this.peek1();
@@ -206,31 +211,51 @@ export class ObjectInputStream {
 
     // ========== BYTE READ METHODS ==========
     read1(): number {
-        if (this.blockDataMode) {
-            if (this.remainingInBlock === 0)
-                this.refillBlockData();
-            if (this.remainingInBlock > 0) {
-                this.remainingInBlock--;
-                return this.data[this.offset++];
-            } else {
-                return -1;
-            }
-        } else {
+        if (!this.blockDataMode)
             return (this.offset < this.data.length) ? this.data[this.offset++] : -1;
+
+        if (this.remainingInBlock === 0)
+            this.refillBlockData();
+        if (this.remainingInBlock > 0) {
+            this.remainingInBlock--;
+            return this.data[this.offset++];
+        } else {
+            return -1;
         }
     }
 
     read(len: number): Uint8Array {
         len = Math.max(len, 0);
-        len = Math.min(len, this.data.length);
-        const result = new Uint8Array(len);
+        len = Math.min(len, this.data.length - this.offset);
 
-        for (let i=0; i<len; i++) {
-            const b = this.read1();
-            if (b < 0)
-                return result.slice(0, i);
-            result[i] = b;
+        if (!this.blockDataMode) {
+            const result = new Uint8Array(this.data.slice(this.offset, this.offset + len));
+            this.offset += len;
+            return result;
         }
+
+        const blocks: Uint8Array[] = [];
+
+        let left = len;
+        while (left > 0 && this.peek1() >= 0) {
+            const toRead = Math.min(left, this.remainingInBlock);
+            const block = this.data.subarray(this.offset, this.offset + toRead);
+            this.offset += toRead;
+            this.remainingInBlock -= toRead;
+            left -= toRead;
+
+            blocks.push(block);
+        }
+
+        const result = new Uint8Array(blocks.reduce((sum, cur) => sum + cur.length, 0));
+        let offset = 0;
+        for (const block of blocks) {
+            result.set(block, offset);
+            offset += block.length;
+        }
+        if (offset !== result.length)
+            throw new exc.InternalError();
+
         return result;
     }
 
@@ -704,6 +729,7 @@ export class ObjectInputStream {
     readObject(): any {
         const oldMode = this.blockDataMode;
         if (this.blockDataMode) {
+            this.peek1();
             if (this.remainingInBlock > 0) {
                 throw new exc.OptionalDataException(this.remainingInBlock);
             } else if (this.curContext?.defaultEndData) {
@@ -720,18 +746,6 @@ export class ObjectInputStream {
             this.readReset();
 
         try {
-            // Skip empty blocks (doesn't exist in OpenJDK)
-            while ((tc = this.peekByte()) === this.TC_BLOCKDATA || tc === this.TC_BLOCKDATALONG) {
-                if (!oldMode)
-                    throw new exc.StreamCorruptedException("unexpected block data");
-
-                this.setBlockDataMode(true);
-                this.peek1();  // force header read
-                if (this.remainingInBlock > 0)
-                    throw new exc.OptionalDataException(this.remainingInBlock);
-                this.setBlockDataMode(false);
-            }
-
             switch (tc) {
                 case this.TC_NULL:
                     return this.readNull();
