@@ -6,4 +6,5 @@ export {
     BaseFallbackClass,
     BaseFallbackSerializable,
     BaseFallbackExternalizable,
+    BaseFallbackEnum,
 } from './object-input-stream';

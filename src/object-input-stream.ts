@@ -491,14 +491,11 @@ export class ObjectInputStream {
         if (this.registeredClasses.has(name))
             return this.registeredClasses.get(name)![1];
 
-        // The default enum is an object where the value of each key is the key itself
-        if (type === "enum")
-            return new Proxy({}, {get: (_, prop) => prop === "$name" ? name : prop}) as Enum;
-
         const fallbackSuperClass = {
             "general":        BaseFallbackClass,
             "serializable":   BaseFallbackSerializable,
             "externalizable": BaseFallbackExternalizable,
+            "enum":           BaseFallbackEnum,
         }[type];
         const superClass = superDesc !== null ? (superDesc.cl as new () => any) : fallbackSuperClass;
 
@@ -583,10 +580,10 @@ export class ObjectInputStream {
         const handle = this.handleTable.newHandle(null);
         const constantName = this.readString();
 
-        if (!(constantName in desc.cl!))
+        if (!(constantName in desc.cl))
             throw new exc.InvalidClassException(desc.name, "enum constant name doesn't exist: " + constantName);
         // @ts-expect-error
-        const result = desc.cl![constantName];
+        const result = desc.cl[constantName];
 
         this.handleTable.replaceObject(handle, null, result);
 
@@ -1153,6 +1150,17 @@ export abstract class BaseFallbackExternalizable extends BaseFallbackClass imple
 
     readExternal(ois: ObjectInputStream): void {
         this.$annotation = ois.readEverything();
+    }
+}
+export abstract class BaseFallbackEnum extends BaseFallbackClass {
+    constructor() {
+        super();
+        return new Proxy(this, {get: (target, prop) => {
+            if (typeof prop === "string" && prop.startsWith("$"))
+                // @ts-expect-error
+                return target[prop];
+            return prop;
+        }})
     }
 }
 
