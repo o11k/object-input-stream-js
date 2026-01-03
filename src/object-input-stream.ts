@@ -522,6 +522,12 @@ export class ObjectInputStream {
                 str = this.readLongUTF();
                 break;
 
+            case this.TC_REFERENCE:
+                str = this.readHandle();
+                if (typeof str !== "string")
+                    throw new exc.ClassCastException("string reference is not a string: " + str);
+                return str;
+
             default:
                 throw new exc.StreamCorruptedException("invalid string type code: " + tcHex(tc));
         }
