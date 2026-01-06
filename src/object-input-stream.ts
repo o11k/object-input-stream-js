@@ -147,7 +147,7 @@ export class ObjectInputStream {
         const result = this.peek1();
         if (result < 0)
             throw new exc.EOFException();
-        return result >= 128 ? 256 - result : result;
+        return result >= 128 ? result - 256 : result;
     }
     protected readBlockHeader(): number {
         if (!this.blockDataMode)
@@ -158,41 +158,33 @@ export class ObjectInputStream {
             return -1;
 
         const oldMode = this.setBlockDataMode(false);
-        let len: number | null = null;
 
         try {
-            while (len === null) {
-                const tc = this.peek1();
-                switch (tc) {
-                    case this.TC_BLOCKDATA:
-                        this.readByte();
-                        len = this.readUnsignedByte();
-                        break;
+            let tc;
+            while ((tc = this.peek1()) === this.TC_RESET)
+                this.readReset();
 
-                    case this.TC_BLOCKDATALONG:
-                        this.readByte();
-                        len = this.readInt();
-                        if (len < 0)
-                            throw new exc.StreamCorruptedException("illegal block data header length: " + len);
-                        break;
+            switch (tc) {
+                case this.TC_BLOCKDATA:
+                    this.readTC();
+                    return this.readUnsignedByte();
 
-                    case this.TC_RESET:
-                        this.readReset();
-                        break;
+                case this.TC_BLOCKDATALONG:
+                    this.readTC();
+                    const len = this.readInt();
+                    if (len < 0)
+                        throw new exc.StreamCorruptedException("illegal block data header length: " + len);
+                    return len;
 
-                    default:
-                        if (tc >= 0 && (tc < this.TC_BASE || tc > this.TC_MAX))
-                            throw new exc.StreamCorruptedException("invalid block type code: " + tcHex(tc));
-                        len = -1;
-                        break;
-                }
+                default:
+                    if (tc >= 0 && (tc < this.TC_BASE || tc > this.TC_MAX))
+                        throw new exc.StreamCorruptedException("invalid block type code: " + tcHex(tc));
+                    return -1;
             }
         }
         finally {
             this.setBlockDataMode(oldMode);
         }
-
-        return len;
     }
     protected refillBlockData(): void {
         if (!this.blockDataMode)
@@ -315,6 +307,8 @@ export class ObjectInputStream {
         return Array.from(resultChars.subarray(0, resultCharsOffset), c => String.fromCharCode(c)).join("");
     }
 
+    protected readTC(): number { return this.readByte(); }
+
     // ========== PRIMITIVE READ METHODS ==========
     readBoolean(): boolean {
         return ByteArray.getBoolean(this.readFully(1));
@@ -362,21 +356,21 @@ export class ObjectInputStream {
 
     // ========== PROTECTED OBJECT READ METHODS ==========
     protected readReset(): void {
-        if (this.readByte() !== this.TC_RESET) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_RESET) throw new exc.InternalError();
         // TODO when depth > 0
         this.handleTable.reset();
     }
     protected readNull(): null {
-        if (this.readByte() !== this.TC_NULL) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_NULL) throw new exc.InternalError();
         return null;
     }
     protected readHandle(): any {
-        if (this.readByte() !== this.TC_REFERENCE) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_REFERENCE) throw new exc.InternalError();
         const handle = this.readInt();
         return this.handleTable.getObject(handle);
     }
     protected readClass(): any {
-        if (this.readByte() !== this.TC_CLASS) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_CLASS) throw new exc.InternalError();
         const classDesc = this.readClassDesc();
         if (classDesc === null)
             throw new exc.NullPointerException();
@@ -406,7 +400,7 @@ export class ObjectInputStream {
         }
     }
     protected readProxyDesc(): ObjectStreamClass<true> {
-        if (this.readByte() !== this.TC_PROXYCLASSDESC) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_PROXYCLASSDESC) throw new exc.InternalError();
         const desc = new ObjectStreamClass(null, null, true);
         const handle = this.handleTable.newHandle(desc);
 
@@ -439,7 +433,7 @@ export class ObjectInputStream {
         return this.proxyClasses.get(ifacesStr)!;
     }
     protected readNonProxyDesc(): ObjectStreamClass<false> {
-        if (this.readByte() !== this.TC_CLASSDESC) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_CLASSDESC) throw new exc.InternalError();
 
         const name = this.readUTF();
         const suid = this.readLong();
@@ -508,7 +502,7 @@ export class ObjectInputStream {
         return cl;
     }
     protected readString(): string {
-        const tc = this.readByte();
+        const tc = this.readTC();
         let str: string;
         switch (tc) {
             case this.TC_STRING:
@@ -532,7 +526,7 @@ export class ObjectInputStream {
         return str;
     }
     protected readArray(): any[] {
-        if (this.readByte() !== this.TC_ARRAY) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_ARRAY) throw new exc.InternalError();
 
         const desc = this.readClassDesc();
         const len = this.readInt();
@@ -571,7 +565,7 @@ export class ObjectInputStream {
         }
     }
     protected readEnum(): Enum {
-        if (this.readByte() !== this.TC_ENUM) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_ENUM) throw new exc.InternalError();
 
         const desc = this.readClassDesc();
         if (!desc?.isEnum)
@@ -590,7 +584,7 @@ export class ObjectInputStream {
         return result;
     }
     protected readOrdinaryObject(): any {
-        if (this.readByte() !== this.TC_OBJECT) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_OBJECT) throw new exc.InternalError();
 
         const desc = this.readClassDesc();
         if (desc === null)
@@ -685,7 +679,7 @@ export class ObjectInputStream {
         return hierarchy.reverse();
     }
     protected readFatalException(): any {
-        if (this.readByte() !== this.TC_ENUM) throw new exc.InternalError();
+        if (this.readTC() !== this.TC_EXCEPTION) throw new exc.InternalError();
 
         this.handleTable.reset();
 
@@ -720,7 +714,7 @@ export class ObjectInputStream {
                     break;
 
                 case this.TC_ENDBLOCKDATA:
-                    this.readByte();
+                    this.readTC();
                     return result;
 
                 default:
@@ -1138,6 +1132,7 @@ export abstract class BaseFallbackClass {
     static $desc: ObjectStreamClass<false>
 }
 export abstract class BaseFallbackSerializable extends BaseFallbackClass implements Serializable {
+    [field: string]: any
     $annotation: any[][] = []
 
     readObject(ois: ObjectInputStream): void {
@@ -1157,11 +1152,17 @@ export abstract class BaseFallbackEnum extends BaseFallbackClass {
 
     constructor() {
         super();
-        return new Proxy(this, {get: (target, prop, receiver) => {
-            if (typeof prop !== "string" || prop.startsWith("$"))
-                return Reflect.get(target, prop, receiver);;
-            return prop;
-        }})
+        return new Proxy(this, {
+            get: (target, prop, receiver) => {
+                if (typeof prop !== "string")
+                    return Reflect.get(target, prop, receiver);
+                return prop;
+            },
+            has(target, prop) {
+                if (typeof prop === "string") return true;
+                return prop in target;
+            },
+        })
     }
 }
 

@@ -24,6 +24,7 @@ export type Node =
   | BlockDataSequenceNode | BlockDataNode
   | PrimitiveNode | UtfNode | LongUtfNode | UtfBodyNode | BytesNode | SkippedNode
   | ObjectNode | TCNode | ClassDescInfoNode | ProxyClassDescInfoNode
+  | ClassDataNode | FieldsNode | ValuesNode | FieldDescNode
 
 export interface RootNode extends BaseNode<[MagicNode, VersionNode, ContentsNode]> {
     type: "root"
@@ -36,7 +37,7 @@ export interface ContentsNode extends BaseNode<(BlockDataSequenceNode | ObjectNo
     type: "contents"
 }
 
-interface BaseNode<C extends BaseNode<any>[] | null> {
+interface BaseNode<C extends Node[] | null> {
     type: string
     span: {start: number, end: number}
     children: C
@@ -119,7 +120,7 @@ export interface BlockDataNode extends BaseNode<
 export type ObjectNode = NewObjectNode | NewClassNode | NewArrayNode | NewStringNode | NewEnumNode | NewClassDescNode | PrevObjectNode | NullNode | ExceptionNode | ResetNode
 export type ClassDescNode = NewClassDescNode | NullNode | PrevObjectNode
 
-interface BaseObjectNode<C extends [TCNode, ...BaseNode<any>[]]> extends BaseNode<C> {
+interface BaseObjectNode<C extends [TCNode, ...Node[]]> extends BaseNode<C> {
     type: "object"
     objectType: string
 }
@@ -185,7 +186,7 @@ export interface ProxyClassDescInfoNode extends BaseNode<[IntNode, ...UtfNode[],
 
 export type ClassDataNode = NoWrClassNode | WrClassNode | ExternalClassNode | OldExternalClassNode
 
-interface BaseClassDataNode<C extends BaseNode<any>[] | null> extends BaseNode<C> {
+interface BaseClassDataNode<C extends Node[] | null> extends BaseNode<C> {
     type: "class-data"
     classType: string
 }
@@ -239,7 +240,7 @@ interface BaseTCNode extends BaseNode<null> {
     value: number
 }
 
-type TCNode = TC_NULL_Node | TC_REFERENCE_Node | TC_CLASSDESC_Node | TC_OBJECT_Node | TC_STRING_Node | TC_ARRAY_Node | TC_CLASS_Node | TC_BLOCKDATA_Node | TC_ENDBLOCKDATA_Node | TC_RESET_Node | TC_BLOCKDATALONG_Node | TC_EXCEPTION_Node | TC_LONGSTRING_Node | TC_PROXYCLASSDESC_Node | TC_ENUM_Node
+export type TCNode = TC_NULL_Node | TC_REFERENCE_Node | TC_CLASSDESC_Node | TC_OBJECT_Node | TC_STRING_Node | TC_ARRAY_Node | TC_CLASS_Node | TC_BLOCKDATA_Node | TC_ENDBLOCKDATA_Node | TC_RESET_Node | TC_BLOCKDATALONG_Node | TC_EXCEPTION_Node | TC_LONGSTRING_Node | TC_PROXYCLASSDESC_Node | TC_ENUM_Node
 
 export type TC_NULL_Node           = BaseTCNode & {value: typeof ObjectInputStream.TC_NULL}
 export type TC_REFERENCE_Node      = BaseTCNode & {value: typeof ObjectInputStream.TC_REFERENCE}
