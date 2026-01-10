@@ -283,8 +283,17 @@ type OisOptions = {
 ## AST
 
 ```js
-// TODO
+import { ObjectInputStreamAST } from 'object-input-stream';
+
+const data = new Uint8Array( /* Java object serialization stream data */ );
+const ois = new ObjectInputStream(data);
+
+// Read everything
+
+const ast = ois.getAST();
 ```
+
+> WARNING: The AST structure and API are unstable, and may change at any type.
 
 ## Limitations
 
@@ -293,7 +302,7 @@ type OisOptions = {
 
 ## TODO
 
-- [ ] ObjectInputStreamAST class: emit AST after parsing
+- [X] ObjectInputStreamAST class: emit AST after parsing
 - [ ] Complete existing tests
 - [ ] Expand tests
     - [ ] Classes

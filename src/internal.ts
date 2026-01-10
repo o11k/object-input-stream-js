@@ -7,4 +7,5 @@ export {
     BaseFallbackSerializable,
     BaseFallbackExternalizable,
     BaseFallbackEnum,
+    ReadMethodT,
 } from './object-input-stream';

@@ -441,27 +441,7 @@ export class ObjectInputStream {
         const handle = this.handleTable.newHandle(desc);
 
         const flags = this.readUnsignedByte();
-
-        const numFields = this.readShort();
-        const fields: FieldDesc[] = [];
-        for (let i=0; i<numFields; i++) {
-            const typecode = String.fromCodePoint(this.readUnsignedByte());
-            const fieldName = this.readUTF();
-
-            switch (typecode) {
-                case 'L': case '[':
-                    const className = this.readString();
-                    fields.push({typecode, name: fieldName, className});
-                    break;
-
-                case 'B': case 'C': case 'D': case 'F': case 'I': case 'J': case 'S': case 'Z':
-                    fields.push({typecode, name: fieldName});
-                    break;
-
-                default:
-                    throw new exc.InvalidClassException(name, "invalid typecode for field " + fieldName + ": " + typecode);
-            }
-        }
+        const fields = this.readFieldDescs(name);
 
         const annotation = this.readAnnotation();
         const superDesc = this.readClassDesc();
@@ -469,6 +449,30 @@ export class ObjectInputStream {
         desc.initNonProxy(cl, flags, fields, annotation, superDesc);
 
         return desc;
+    }
+    protected readFieldDescs(className: string): FieldDesc[] {
+        const numFields = this.readShort();
+        const fields: FieldDesc[] = [];
+        for (let i=0; i<numFields; i++) {
+            fields.push(this.readFieldDesc(className));
+        }
+        return fields;
+    }
+    protected readFieldDesc(className: string): FieldDesc {
+        const typecode = String.fromCodePoint(this.readUnsignedByte());
+        const fieldName = this.readUTF();
+
+        switch (typecode) {
+            case 'L': case '[':
+                const fieldClassName = this.readString();
+                return {typecode, name: fieldName, className: fieldClassName};
+
+            case 'B': case 'C': case 'D': case 'F': case 'I': case 'J': case 'S': case 'Z':
+                return {typecode, name: fieldName};
+
+            default:
+                throw new exc.InvalidClassException(className, "invalid typecode for field " + fieldName + ": " + typecode);
+        }
     }
     protected getClassType(flags: number): ClassType {
         if      (flags & this.SC_ENUM)           return "enum";
@@ -635,7 +639,8 @@ export class ObjectInputStream {
         for (const curDesc of descs) {
             const curClass = curDesc.cl as SerializableCtor;
 
-            let readMethod: NonNullable<Serializable["readObject"]> | null = null;
+            let readMethod: ReadMethodT;
+
             if (obj instanceof curClass) {
                 if (curClass.serialVersionUID !== undefined && curClass.serialVersionUID !== curDesc.suid)
                     throw new exc.InvalidClassException(curDesc.name, "stream suid " + curDesc.suid + " doesn't match available suid " + curClass.serialVersionUID);
@@ -653,21 +658,37 @@ export class ObjectInputStream {
                 }
             }
 
-            const oldContext = this.curContext;
-            this.curContext = {
-                desc: curDesc,
-                obj,
-                alreadyReadFields: false,
-                defaultEndData: false,
+            if (objDesc.hasWriteObjectData) {
+                this.readClassDataWr(obj, curDesc, readMethod);
+            } else {
+                this.readClassDataNoWr(obj, curDesc, readMethod);
             }
-
-            this.setBlockDataMode(true);
-            readMethod!.apply(obj, [this]);
-            if (curDesc.hasWriteObjectData)
-                this.readAnnotation();
-
-            this.curContext = oldContext;
         }
+    }
+    protected readClassDataNoWr(obj: Serializable, desc: ObjectStreamClass, readMethod: ReadMethodT): void {
+        this.readClassData(obj, desc, readMethod);
+    }
+    protected readClassDataWr(obj: Serializable, desc: ObjectStreamClass, readMethod: ReadMethodT): void {
+        this.readClassData(obj, desc, readMethod);
+    }
+    protected readClassData(obj: Serializable, desc: ObjectStreamClass, readMethod: ReadMethodT): void {
+        if (readMethod === null)
+            readMethod = defaultReadMethod;
+        
+        const oldContext = this.curContext;
+        this.curContext = {
+            desc: desc,
+            obj,
+            alreadyReadFields: false,
+            defaultEndData: false,
+        }
+
+        this.setBlockDataMode(true);
+        readMethod!.apply(obj, [this]);
+        if (desc.hasWriteObjectData)
+            this.readAnnotation();
+
+        this.curContext = oldContext;
     }
     private getClassDescHierarchy(classDesc: ObjectStreamClass): ObjectStreamClass[] {
         const hierarchy = [];
@@ -1117,6 +1138,7 @@ export interface SerializableCtor {
     serialVersionUID?: bigint
     new (): Serializable
 }
+export type ReadMethodT = NonNullable<Serializable["readObject"]>;
 export interface Externalizable {
     readExternal(ois: ObjectInputStream): void
     readResolve?(): any

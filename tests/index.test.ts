@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 
 import {
-    ObjectInputStream, Serializable, Externalizable, internal
+    ObjectInputStream, Serializable, Externalizable, internal,
+    ObjectInputStreamAST,
+    ast
 } from '../src/index';
 import { EOFException, InvalidClassException, NullPointerException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
 
@@ -223,6 +225,49 @@ test.todo("eof after reset")
 
 test.todo("classDesc gets handle before its object")  // The docs conflict on it, so must check
 
+
+class SerNoW implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+}
+class SerW implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    writeObject(ois: ObjectInputStream) {ois.defaultReadObject();}
+}
+class EmptySerW implements Serializable {readObject(_ois: ObjectInputStream) {}}
+class SerWExtra implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    readObject(ois: ObjectInputStream) {
+        ois.defaultReadObject();
+        // Extra is read implicitly
+    }
+}
+class SerWNoFields implements Serializable {
+    i_in_js: number; constructor(i=0) {this.i_in_js = i;}
+    readObject(ois: ObjectInputStream) {this.i_in_js = ois.readInt();}
+}
+class SerWMisplacedFields implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    readObject(ois: ObjectInputStream) {
+        expect(ois.readInt()).toBe(123);
+        ois.defaultReadObject();
+        expect(ois.readInt()).toBe(456);
+    }
+}
+class ExtParent implements Externalizable {
+    readExternal(ois: ObjectInputStream) {
+        throw new Error("This should never run")
+    }
+}
+class ExtChild extends ExtParent {
+    i_in_js: number; constructor(i=0) {super(); this.i_in_js = i;}
+    readExternal(ois: ObjectInputStream) {
+        this.i_in_js = ois.readInt();
+        expect(ois.readUTF()).toBe("testicle");
+        expect(ois.readObject()).toBeInstanceOf(EmptySerW);
+    }
+}
+
+
 const HANDLERS_FILENAME = "handlers";
 const CLASS_PREFIX = "com.o11k.GenerateTests$"
 test("handlers behavior", () => {
@@ -230,46 +275,6 @@ test("handlers behavior", () => {
     const tell = (ois: ObjectInputStream) => ois.offset;
     // @ts-expect-error
     const seek = (ois: ObjectInputStream, offset: number) => {ois.offset = offset};
-
-    class SerNoW implements Serializable {
-        i: number; constructor(i=0) {this.i = i;}
-    }
-    class SerW implements Serializable {
-        i: number; constructor(i=0) {this.i = i;}
-        writeObject(ois: ObjectInputStream) {ois.defaultReadObject();}
-    }
-    class EmptySerW implements Serializable {readObject(_ois: ObjectInputStream) {}}
-    class SerWExtra implements Serializable {
-        i: number; constructor(i=0) {this.i = i;}
-        readObject(ois: ObjectInputStream) {
-            ois.defaultReadObject();
-            // Extra is read implicitly
-        }
-    }
-    class SerWNoFields implements Serializable {
-        i_in_js: number; constructor(i=0) {this.i_in_js = i;}
-        readObject(ois: ObjectInputStream) {this.i_in_js = ois.readInt();}
-    }
-    class SerWMisplacedFields implements Serializable {
-        i: number; constructor(i=0) {this.i = i;}
-        readObject(ois: ObjectInputStream) {
-            expect(ois.readInt()).toBe(123);
-            ois.defaultReadObject();
-            expect(ois.readInt()).toBe(456);
-        }
-    }
-    class ExtParent implements Externalizable {
-        readExternal(ois: ObjectInputStream) {
-            throw new Error("This should never run")
-        }
-    }
-    class ExtChild extends ExtParent {
-        i_in_js: number; constructor(i=0) {super(); this.i_in_js = i;}
-        readExternal(ois: ObjectInputStream) {
-            this.i_in_js = ois.readInt();
-            expect(ois.readUTF()).toBe("testicle");
-        }
-    }
 
     const oisHandlers = new ObjectInputStream(readSerializedFile(HANDLERS_FILENAME))
     oisHandlers.registerSerializable(CLASS_PREFIX+"SerNoW", SerNoW);
@@ -524,3 +529,114 @@ test("eof in middle of primitive / object", () => {
     ]));
     expect(() => ois2.readObject()).toThrow(EOFException);
 })
+
+
+// withOos("primitives", GenerateTests::genPrimitives);
+// withOos("floats", GenerateTests::genFloats);
+// withOos("int-limits", GenerateTests::genIntLimits);
+// withOos("primitive-wrappers", GenerateTests::genPrimitiveWrappers);
+// withOos("strings", GenerateTests::genStrings);
+// withOos("arrays", GenerateTests::genArrays);
+// withOos("obj-ref-vs-eq", GenerateTests::genObjRef);
+// genBlockEdgeCases("blocks");
+// withOos("circular", GenerateTests::genCircular);
+// withOos("handlers", GenerateTests::genHandlers);
+
+function testAst(filename: string, structure: any, run=(ois: ObjectInputStreamAST)=>{}) {
+    const ois = new ObjectInputStreamAST(readSerializedFile(filename));
+    run(ois);
+    ois.readEverything();
+    const astRoot = ois.getAST().root;
+    expect(astRoot).toMatchObject(structure)
+
+    // function pp(node: ast.Node, indent=0) {
+    //     let res = " ".repeat(indent) + node.type;
+    //     if ((node as any).value !== undefined) res += ": " + (node as any).value;
+    //     if (node.children !== null && node.children.length > 0)
+    //         res += "\n" + node.children.map(c => pp(c,indent+1)).join("\n")
+    //     return res;
+    // }
+
+    // console.log(pp(astRoot))
+}
+
+test("ast: primitives", () => {
+    testAst(PRIMITIVES_FILENAME, {children: [{},{},{children: [
+        {type: "blockdata-sequence", children: [
+            {type: "blockdata"}
+        ]},
+    ]}]});
+})
+
+
+test("ast: primitive wrappers", () => {
+    testAst(PRIMITIVE_WRAPPERS_FILENAME, {children: [{},{},{children: [
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5       }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [    {type: "class-data", children: [{}, {type: "values", children: [{value: '\u0005'}]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5       }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5       }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5       }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5n      }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [{}, {type: "class-data", children: [{}, {type: "values", children: [{value: 5       }]}]}]}]},
+        {objectType: "new-object", children: [{value: c.TC_OBJECT}, {}, {type: "serial-data", children: [    {type: "class-data", children: [{}, {type: "values", children: [{value: true    }]}]}]}]},
+    ]}]});
+})
+
+test("ast: arrays", () => {
+    testAst(ARRAYS_FILENAME, {children: [{},{},{children: [
+        {objectType: "new-array", children: [{},{},{value: 0  },{}]},
+        {objectType: "new-array", children: [{},{},{value: 256},{
+            children: Array.from({length: 256}, (_item, index) => ({type: "primitive", dataType: "byte", value: index-128}))
+        }]},
+        {objectType: "new-array", children: [{},{},{value: 3  },{children: [
+            {objectType: "new-array", children: [{},{},{value: 3},{children: [{value: 1}, {value: 2}, {value: 3}]}]},
+            {objectType: "new-array", children: [{},{},{value: 3},{children: [{value: 4}, {value: 5}, {value: 6}]}]},
+            {objectType: "new-array", children: [{},{},{value: 3},{children: [{value: 7}, {value: 8}, {value: 9}]}]},
+        ]}]},
+        {objectType: "new-array", children: [{},{},{value: 3  },{children: [{},{},{}]}]},
+    ]}]});
+})
+
+test("ast: blocks", () => {
+    testAst(BLOCKS_FILENAME, {children: [{},{},{children: [
+        {type: "blockdata-sequence", children: [
+            {children: [{},{value: 0},{}]},
+            {children: [{},{value: 1},{}]},
+            {children: [{},{value: 0},{}]},
+            {children: [{},{value: 0},{}]},
+            {children: [{},{value: 2},{}]},
+            {children: [{},{value: 1},{}]},
+        ]},
+        {objectType: "new-object"},
+        {type: "blockdata-sequence", children: [{},{},{}]},
+        {objectType: "new-object"},
+    ]}]});
+})
+
+test("ast: handlers", () => {
+    testAst(HANDLERS_FILENAME, {children: [{},{},{children: [
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"SerNoW"             },{},{}]},{}]},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"SerW"               },{},{}]},{}]},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"SerWExtra"          },{},{}]},{}]},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"SerWNoFields"       },{},{}]},{}]},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"SerWMisplacedFields"},{},{}]},{}]},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"ExtChild"           },{},{}]},{}]},
+        {objectType: "reset"},
+        {objectType: "new-object", children: [{},{children: [{},{value: CLASS_PREFIX+"ExtChild"           },{},{}]},{}]},
+    ]}]}, (ois) => {
+        ois.registerSerializable(CLASS_PREFIX+"SerNoW", SerNoW);
+        ois.registerSerializable(CLASS_PREFIX+"SerW", SerW);
+        ois.registerSerializable(CLASS_PREFIX+"EmptySerW", EmptySerW);
+        ois.registerSerializable(CLASS_PREFIX+"SerWExtra", SerWExtra);
+        ois.registerSerializable(CLASS_PREFIX+"SerWNoFields", SerWNoFields);
+        ois.registerSerializable(CLASS_PREFIX+"SerWMisplacedFields", SerWMisplacedFields);
+        ois.registerExternalizable(CLASS_PREFIX+"ExtParent", ExtParent);
+        ois.registerExternalizable(CLASS_PREFIX+"ExtChild", ExtChild);
+    })
+})
+
+// readObject is called even if not SC_WRITE_METHOD
+// header      class A   suid=0 Serializable int x              "kaki"           x=69
+// aced0005 73 72 000141 0000000000000000 02 000149000178 78 70 770600046b616b69 00000045
+
+// multiple resets before / after / betweem objects and blocks

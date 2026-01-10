@@ -22,9 +22,10 @@ export default Ast
 export type Node =
     RootNode | MagicNode | VersionNode | ContentsNode
   | BlockDataSequenceNode | BlockDataNode
-  | PrimitiveNode | UtfNode | LongUtfNode | UtfBodyNode | BytesNode | SkippedNode
+  | PrimitiveNode | UtfNode | LongUtfNode | UtfBodyNode
   | ObjectNode | TCNode | ClassDescInfoNode | ProxyClassDescInfoNode
-  | ClassDataNode | FieldsNode | ValuesNode | FieldDescNode
+  | SerialDataNode | ExternalDataNode | SerialClassDataNode | FieldsNode | ValuesNode | FieldDescNode
+  | AnnotationNode
 
 export interface RootNode extends BaseNode<[MagicNode, VersionNode, ContentsNode]> {
     type: "root"
@@ -47,12 +48,12 @@ interface BaseNode<C extends Node[] | null> {
 
 // ========== Primitives ==========
 
-export type PrimitiveNode = ByteNode | UnsignedByteNode | ShortNode | UnsignedShortNode | IntNode | FloatNode | DoubleNode | CharNode | BooleanNode | LongNode
+export type PrimitiveNode = ByteNode | UnsignedByteNode | ShortNode | UnsignedShortNode | IntNode | FloatNode | DoubleNode | CharNode | BooleanNode | LongNode | BytesNode
 
 interface BasePrimitiveNode extends BaseNode<null> {
     type: "primitive"
     dataType: string
-    value: number | string | boolean | bigint
+    value: number | string | boolean | bigint | null
 }
 interface NumberNode extends BasePrimitiveNode {
     dataType: string
@@ -78,33 +79,30 @@ export interface LongNode extends BasePrimitiveNode {
     dataType: "long"
     value: bigint
 }
+export interface BytesNode extends BasePrimitiveNode {
+    dataType: "bytes"
+    value: null
+}
 
 export interface UtfNode extends BaseNode<[UnsignedShortNode, UtfBodyNode]> {
     type: "utf"
+    value: string
 }
 export interface LongUtfNode extends BaseNode<[LongNode, UtfBodyNode]> {
     type: "long-utf"
+    value: string
 }
 export interface UtfBodyNode extends BaseNode<null> {
     type: "utf-body"
     value: string
 }
 
-export interface BytesNode extends BaseNode<null> {
-    type: "bytes"
-}
-
-export interface SkippedNode extends BaseNode<null> {
-    type: "skipped"
-    reason: string
-}
-
 
 // ========== Block Data ==========
 
-export interface BlockDataSequenceNode extends BaseNode<BlockDataNode[]> {
+export interface BlockDataSequenceNode extends BaseNode<(BlockDataNode | ResetNode)[]> {
     type: "blockdata-sequence"
-    values: (PrimitiveNode | UtfNode | SkippedNode)[]
+    values: (PrimitiveNode | UtfNode)[]
 }
 
 export interface BlockDataNode extends BaseNode<
@@ -126,7 +124,7 @@ interface BaseObjectNode<C extends [TCNode, ...Node[]]> extends BaseNode<C> {
 }
 
 export interface NewObjectNode extends BaseObjectNode<
-    [TC_OBJECT_Node, ClassDescNode, ...ClassDataNode[]]
+    [TC_OBJECT_Node, ClassDescNode, (ExternalDataNode | SerialDataNode)]
 > {
     objectType: "new-object"
     handle: Handle
@@ -144,9 +142,10 @@ export interface NewStringNode extends BaseObjectNode<
     [TC_LONGSTRING_Node, LongUtfNode]
 > {
     objectType: "new-string"
+    value: string
     handle: Handle
 }
-export interface NewEnumNode extends BaseObjectNode<[TC_ENUM_Node, ClassDescNode, ObjectNode]> {
+export interface NewEnumNode extends BaseObjectNode<[TC_ENUM_Node, ClassDescNode, StringNode]> {
     objectType: "new-enum"
     handle: Handle
 }
@@ -164,7 +163,7 @@ export interface PrevObjectNode extends BaseObjectNode<[TC_REFERENCE_Node, IntNo
 export interface NullNode extends BaseObjectNode<[TC_NULL_Node]> {
     objectType: "null"
 }
-export interface ExceptionNode extends BaseObjectNode<[TC_EXCEPTION_Node, ObjectNode]> {
+export interface ExceptionNode extends BaseObjectNode<[TC_EXCEPTION_Node, (NewObjectNode | PrevObjectNode)]> {
     objectType: "exception"
     exceptionEpoch: number
     newEpoch: number
@@ -174,44 +173,47 @@ export interface ResetNode extends BaseObjectNode<[TC_RESET_Node]> {
     newEpoch: number
 }
 
-export interface ClassDescInfoNode extends BaseNode<[ByteNode, FieldsNode, ContentsNode, TC_ENDBLOCKDATA_Node, ClassDescNode]> {
+export interface ClassDescInfoNode extends BaseNode<[UnsignedByteNode, FieldsNode, AnnotationNode, ClassDescNode]> {
     type: "class-desc-info"
 }
-export interface ProxyClassDescInfoNode extends BaseNode<[IntNode, ...UtfNode[], ContentsNode, TC_ENDBLOCKDATA_Node, ClassDescNode]> {
+export interface ProxyClassDescInfoNode extends BaseNode<[IntNode, ...UtfNode[], AnnotationNode, ClassDescNode]> {
     type: "proxy-class-desc-info"
 }
+export interface AnnotationNode extends BaseNode<[ContentsNode, TC_ENDBLOCKDATA_Node]> {
+    type: "annotation"
+}
 
+export type StringNode = NewStringNode | PrevObjectNode;
 
 // ========== Fields & Values ==========
 
-export type ClassDataNode = NoWrClassNode | WrClassNode | ExternalClassNode | OldExternalClassNode
-
-interface BaseClassDataNode<C extends Node[] | null> extends BaseNode<C> {
-    type: "class-data"
-    classType: string
+export interface SerialDataNode extends BaseNode<SerialClassDataNode[]> {
+    type: "serial-data"
 }
-export interface NoWrClassNode extends BaseClassDataNode<[ValuesNode]> {
-    classType: "serializable"
+export type SerialClassDataNode = NoWrClassNode | WrClassNode;
+export interface NoWrClassNode extends BaseNode<
+    // Compliant signature is [ValuesNode],
+    // but read methods can ignore this constraint
+    [ContentsNode, ...([ValuesNode]|[])]
+> {
+    type: "class-data"
     writeMethod: false
 }
-export interface WrClassNode extends BaseClassDataNode<
-    [ValuesNode, ContentsNode] |
-
-    // A write method can choose to violate the spec and write its values late, or not at all.
-    // Why? Because fuck you that's why.
-    [ContentsNode, ValuesNode, ContentsNode] |
-    [ContentsNode, ValuesNode] |
-    [ContentsNode]
+export interface WrClassNode extends BaseNode<
+    // Compliant signature is [ValuesNode, AnnotationNode],
+    // but read methods can ignore this constraint
+    [...([ContentsNode, ValuesNode]|[]), AnnotationNode]
 > {
-    classType: "serializable"
+    type: "class-data"
     writeMethod: true
 }
-export interface ExternalClassNode extends BaseClassDataNode<[ContentsNode]> {
-    classType: "externalizable"
+export type ExternalDataNode = ExternalClassDataNode | OldExternalClassDataNode;
+export interface ExternalClassDataNode extends BaseNode<[AnnotationNode]> {
+    type: "external-data"
     protocolVersion: 2
 }
-export interface OldExternalClassNode extends BaseClassDataNode<(ObjectNode | PrimitiveNode | UtfNode | BytesNode)[]> {
-    classType: "externalizable"
+export interface OldExternalClassDataNode extends BaseNode<(ObjectNode | PrimitiveNode | UtfNode)[]> {
+    type: "external-data"
     protocolVersion: 1
 }
 
@@ -227,7 +229,7 @@ export interface PrimitiveDescNode extends BaseNode<[UnsignedByteNode, UtfNode]>
     type: "field-desc"
     fieldType: "primitive"
 }
-export interface ObjectDescNode extends BaseNode<[UnsignedByteNode, UtfNode, ObjectNode]> {
+export interface ObjectDescNode extends BaseNode<[UnsignedByteNode, UtfNode, StringNode]> {
     type: "field-desc"
     fieldType: "object"
 }
