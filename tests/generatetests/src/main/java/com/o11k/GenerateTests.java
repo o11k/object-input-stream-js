@@ -398,6 +398,26 @@ public class GenerateTests {
         oos.write(new byte[]{1,1,1,1,1,1,1,1,1,1,1,1,1,1});
     }
 
+    static void genClasses(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(SerNoW.class);
+        oos.writeObject(SerW.class);
+        oos.writeObject(SerWExtra.class);
+        oos.writeObject(SerWNoFields.class);
+        oos.writeObject(SerWMisplacedFields.class);
+        oos.writeObject(ExtParent.class);
+        oos.writeObject(ExtChild.class);
+    }
+
+    static void genClassDescs(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(ObjectStreamClass.lookup(SerNoW.class));
+        oos.writeObject(ObjectStreamClass.lookup(SerW.class));
+        oos.writeObject(ObjectStreamClass.lookup(SerWExtra.class));
+        oos.writeObject(ObjectStreamClass.lookup(SerWNoFields.class));
+        oos.writeObject(ObjectStreamClass.lookup(SerWMisplacedFields.class));
+        oos.writeObject(ObjectStreamClass.lookup(ExtParent.class));
+        oos.writeObject(ObjectStreamClass.lookup(ExtChild.class));
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
 
@@ -415,5 +435,7 @@ public class GenerateTests {
         withOos("resets", GenerateTests::genResets);
         withOos("ser-extends", GenerateTests::genSerializableInheritence);
         withOos("externalizable", GenerateTests::genExternalizable);
+        withOos("classes", GenerateTests::genClasses);
+        withOos("classdescs", GenerateTests::genClassDescs);
     }
 }

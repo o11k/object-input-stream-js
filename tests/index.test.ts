@@ -9,6 +9,7 @@ import {
     ast
 } from '../src/index';
 import { ClassNotFoundException, EOFException, InvalidClassException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
+import { BaseFallbackExternalizable, BaseFallbackSerializable, ObjectStreamClass } from '../src/object-input-stream';
 
 // For constants
 const c = ObjectInputStream;
@@ -367,6 +368,86 @@ test("handlers behavior", () => {
         ...new TextEncoder().encode("testicle"),
     ]))
     expect(externalizable.$annotation[1]).toEqual(new EmptySerW())
+})
+
+const CLASSES_FILENAME = "classes";
+test("read classes", () => {
+    const ois = new ObjectInputStream(readSerializedFile(CLASSES_FILENAME));
+
+    // Register
+    ois.registerSerializable(CLASS_PREFIX+"SerNoW", SerNoW);
+
+    // Don't register
+    //ois.registerSerializable(CLASS_PREFIX+"SerW", SerW);
+
+    // Register random value
+    const dummy_SerWExtra = Symbol("what??") as any;
+    ois.registerSerializable(CLASS_PREFIX+"SerWExtra", dummy_SerWExtra);
+
+    // Register duplicate
+    ois.registerSerializable(CLASS_PREFIX+"SerWNoFields", SerNoW);
+
+    // Register again
+    ois.registerSerializable(CLASS_PREFIX+"SerWMisplacedFields", SerWMisplacedFields);
+
+    // Externalizable: don't register
+    //ois.registerExternalizable(CLASS_PREFIX+"ExtParent", ExtParent);
+
+    // Externalizable: register
+    ois.registerExternalizable(CLASS_PREFIX+"ExtChild", ExtChild);
+    
+    const class_SerNoW = ois.readObject();
+    const class_SerW = ois.readObject();
+    const class_SerWExtra = ois.readObject();
+    const class_SerWNoFields = ois.readObject();
+    const class_SerWMisplacedFields = ois.readObject();
+    const class_ExtParent = ois.readObject();
+    const class_ExtChild = ois.readObject();
+
+    expect(class_SerNoW).toBe(SerNoW);
+    expect(class_SerW.prototype).toBeInstanceOf(BaseFallbackSerializable);
+    expect(class_SerWExtra).toBe(dummy_SerWExtra);
+    expect(class_SerWNoFields).toBe(SerNoW);
+    expect(class_SerWMisplacedFields).toBe(SerWMisplacedFields);
+    expect(class_ExtParent.prototype).toBeInstanceOf(BaseFallbackExternalizable);
+    expect(class_ExtChild).toBe(ExtChild);
+})
+
+const CLASSDESCS_FILENAME = "classdescs";
+test("read class descriptors", () => {
+    const oisPre = new ObjectInputStream(readSerializedFile(CLASSDESCS_FILENAME));
+    oisPre.readEverything().forEach(item => expect(item).toBeInstanceOf(ObjectStreamClass));
+
+    const ois = new ObjectInputStream(readSerializedFile(CLASSDESCS_FILENAME));
+
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"SerNoW",
+        isEnum: false, serializable: true, externalizable: false, hasWriteObjectData: false, hasBlockExternalData: false,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"SerW",
+        isEnum: false, serializable: true, externalizable: false, hasWriteObjectData: true, hasBlockExternalData: false,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"SerWExtra",
+        isEnum: false, serializable: true, externalizable: false, hasWriteObjectData: true, hasBlockExternalData: false,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"SerWNoFields",
+        isEnum: false, serializable: true, externalizable: false, hasWriteObjectData: true, hasBlockExternalData: false,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"SerWMisplacedFields",
+        isEnum: false, serializable: true, externalizable: false, hasWriteObjectData: true, hasBlockExternalData: false,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"ExtParent",
+        isEnum: false, serializable: false, externalizable: true, hasWriteObjectData: false, hasBlockExternalData: true,
+    });
+    expect(ois.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"ExtChild",
+        isEnum: false, serializable: false, externalizable: true, hasWriteObjectData: false, hasBlockExternalData: true,
+    });
 })
 
 // User errors
@@ -753,7 +834,7 @@ test("eof in middle of block", () => {
         c.TC_BLOCKDATA, 0xff,
         0x69, 0x69, 0x69,
     ]));
-    expect(ois.read1()).toThrow(StreamCorruptedException);
+    expect(() => ois.read1()).toThrow(StreamCorruptedException);
 })
 
 

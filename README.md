@@ -305,8 +305,9 @@ const ast = ois.getAST();
 - [X] ObjectInputStreamAST class: emit AST after parsing
 - [X] Complete existing tests
 - [ ] Expand tests
-    - [ ] Classes
-    - [ ] Class descriptors
+    - [X] Classes
+    - [X] Class descriptors
     - [ ] Proxy classes
     - [ ] Enums
+    - [ ] java.util handlers
     - [ ] Sudden death: a brazillian randomly generated primitives and objects with a complex reference graph and readObject/readExternal
