@@ -8,7 +8,7 @@ import {
     ObjectInputStreamAST,
     ast
 } from '../src/index';
-import { EOFException, InvalidClassException, NullPointerException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
+import { ClassNotFoundException, EOFException, InvalidClassException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
 
 // For constants
 const c = ObjectInputStream;
@@ -33,6 +33,71 @@ function readSerializedFile(baseFilename: string): Uint8Array {
 // Equivalent to (double)(float)d in Java
 function toFloat32(d: number): number {
     return new Float32Array([d])[0];
+}
+
+const CLASS_PREFIX = "com.o11k.GenerateTests$"
+class EmptyClass implements Serializable {}
+class SerNoW implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+}
+class SerW implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    writeObject(ois: ObjectInputStream) {ois.defaultReadObject();}
+}
+class EmptySerW implements Serializable {readObject(_ois: ObjectInputStream) {}}
+class SerWExtra implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    readObject(ois: ObjectInputStream) {
+        ois.defaultReadObject();
+        // Extra is read implicitly
+    }
+}
+class SerWNoFields implements Serializable {
+    i_in_js: number; constructor(i=0) {this.i_in_js = i;}
+    readObject(ois: ObjectInputStream) {this.i_in_js = ois.readInt();}
+}
+class SerWMisplacedFields implements Serializable {
+    i: number; constructor(i=0) {this.i = i;}
+    readObject(ois: ObjectInputStream) {
+        expect(ois.readInt()).toBe(123);
+        ois.defaultReadObject();
+        expect(ois.readInt()).toBe(456);
+    }
+}
+class ExtParent implements Externalizable {
+    readExternal(ois: ObjectInputStream) {
+        throw new Error("This should never run")
+    }
+}
+class ExtChild extends ExtParent {
+    i_in_js: number; constructor(i=0) {super(); this.i_in_js = i;}
+    readExternal(ois: ObjectInputStream) {
+        this.i_in_js = ois.readInt();
+        expect(ois.readUTF()).toBe("testicle");
+        expect(ois.readObject()).toBeInstanceOf(EmptySerW);
+    }
+}
+
+class SerParent implements Serializable {
+    parentField: number
+    constructor(field=-123) {
+        this.parentField = field;
+    }
+    readObject(ois: ObjectInputStream): void {
+        ois.defaultReadObject();
+        this.parentField = 69;
+    }
+}
+class SerChild extends SerParent {
+    childField: number;
+    constructor(pField=-123, cField=-123) {
+        super(pField);
+        this.childField = cField;
+    }
+    readObject(ois: ObjectInputStream): void {
+        ois.defaultReadObject();
+        this.childField = 69;
+    }
 }
 
 const PRIMITIVES_FILENAME = "primitives"
@@ -220,56 +285,24 @@ test("circular reference", () => {
     expect((obj as any)?.obj).toBe(obj);
 })
 
-test.todo("eof after reset")
+const RESET_FILENAME = "resets";
+test("resets everywhere", () => {
+    const ois = new ObjectInputStream(readSerializedFile(RESET_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"EmptyClass", EmptyClass);
 
+    expect(ois.readLong()).toBe(0x6969696969696969n);
+    expect(ois.readLong()).toBe(0x6969696969696969n);
+    expect(ois.readObject()).toBeInstanceOf(EmptyClass);
+    expect(ois.readObject()).toBeInstanceOf(EmptyClass);
+    expect(ois.readLong()).toBe(0x6969696969696969n);
 
-test.todo("classDesc gets handle before its object")  // The docs conflict on it, so must check
+    expect(() => ois.readObject()).toThrow(EOFException);
+})
 
-
-class SerNoW implements Serializable {
-    i: number; constructor(i=0) {this.i = i;}
-}
-class SerW implements Serializable {
-    i: number; constructor(i=0) {this.i = i;}
-    writeObject(ois: ObjectInputStream) {ois.defaultReadObject();}
-}
-class EmptySerW implements Serializable {readObject(_ois: ObjectInputStream) {}}
-class SerWExtra implements Serializable {
-    i: number; constructor(i=0) {this.i = i;}
-    readObject(ois: ObjectInputStream) {
-        ois.defaultReadObject();
-        // Extra is read implicitly
-    }
-}
-class SerWNoFields implements Serializable {
-    i_in_js: number; constructor(i=0) {this.i_in_js = i;}
-    readObject(ois: ObjectInputStream) {this.i_in_js = ois.readInt();}
-}
-class SerWMisplacedFields implements Serializable {
-    i: number; constructor(i=0) {this.i = i;}
-    readObject(ois: ObjectInputStream) {
-        expect(ois.readInt()).toBe(123);
-        ois.defaultReadObject();
-        expect(ois.readInt()).toBe(456);
-    }
-}
-class ExtParent implements Externalizable {
-    readExternal(ois: ObjectInputStream) {
-        throw new Error("This should never run")
-    }
-}
-class ExtChild extends ExtParent {
-    i_in_js: number; constructor(i=0) {super(); this.i_in_js = i;}
-    readExternal(ois: ObjectInputStream) {
-        this.i_in_js = ois.readInt();
-        expect(ois.readUTF()).toBe("testicle");
-        expect(ois.readObject()).toBeInstanceOf(EmptySerW);
-    }
-}
-
+// test.todo("classDesc gets handle before its object")  // The docs conflict on it, so must check
+// commented because docs don't really conflict
 
 const HANDLERS_FILENAME = "handlers";
-const CLASS_PREFIX = "com.o11k.GenerateTests$"
 test("handlers behavior", () => {
     // @ts-expect-error
     const tell = (ois: ObjectInputStream) => ois.offset;
@@ -338,22 +371,206 @@ test("handlers behavior", () => {
 
 // User errors
 
-test.todo("readFields twice")
-test.todo("readFields outside readObject")
-test.todo("readFields inside readExternal")
-test.todo("readObject where fields aren't in the start, without handler")  // Can corrupt stream
-// test("externalizable without readExternal")  // ts prevents that?
-test.todo("externalizable PROTOCOL_VERSION_1 without handler")
-test.todo("unmatching serialVersionUID")
-test.todo("serializable reading too much")
-test.todo("externalizable reading too much")
-test.todo("externalizable PROTOCOL_VERSION_1 reading too much")  // Corrupts stream
-test.todo("read too much")  // primitive + object cases
-test.todo("readObject when in block")
-test.todo("read[primitive] when not in block")
-test.todo("serializable parent class in java but not js")
-test.todo("readResolve circular reference")
-test.todo("readResolve multiple handles")  // unrealistic condition
+test("readFields twice", () => {
+    class BadEmptyClass implements Serializable {
+        readObject(ois: ObjectInputStream): void {
+            ois.readFields();
+            ois.readFields();
+        }
+    }
+
+    const ois = new ObjectInputStream(readSerializedFile(OBJ_REF_FILENAME))
+    ois.registerSerializable(CLASS_PREFIX+"EmptyClass", BadEmptyClass);
+
+    expect(() => ois.readObject()).toThrow(NotActiveException);
+})
+test("readFields outside readObject", () => {
+    const ois = new ObjectInputStream(readSerializedFile(OBJ_REF_FILENAME));
+    expect(() => ois.readFields()).toThrow(NotActiveException);
+})
+
+// test.todo("readObject where fields aren't in the start, without handler")  // Can corrupt stream
+// commented because already tested in handlers
+
+// test("externalizable without readExternal")
+// commented because ts prevents that so it's beyond the scope of this test suite
+
+test("unmatching serialVersionUID: serializable", () => {
+    class UnmatchingEmptyClass implements Serializable {
+        static readonly serialVersionUID = 69420n;
+    }
+
+    const ois = new ObjectInputStream(readSerializedFile(OBJ_REF_FILENAME))
+    ois.registerSerializable(CLASS_PREFIX+"EmptyClass", UnmatchingEmptyClass);
+
+    expect(() => ois.readObject()).toThrow(InvalidClassException);
+})
+
+test("unmatching serialVersionUID: externalizable", () => {
+    class UnmachingExtChild extends ExtChild {
+        static readonly serialVersionUID = 69420n;
+    }
+
+    const ois = new ObjectInputStream(readSerializedFile(EXTERNALIZABLE_FILENAME))
+    ois.registerSerializable(CLASS_PREFIX+"EmptySerW", EmptySerW);
+    ois.registerExternalizable(CLASS_PREFIX+"ExtChild", UnmachingExtChild);
+
+    expect(() => ois.readObject()).toThrow(InvalidClassException);
+})
+
+// test.todo("externalizable PROTOCOL_VERSION_1 without handler");
+// commented because already tested in handlers
+
+test("serializable reading too much", () => {
+    class EmptyClassTooMuch implements Serializable {
+        readObject(ois: ObjectInputStream): void {
+            ois.readInt();
+        }
+    }
+
+    const ois = new ObjectInputStream(readSerializedFile(OBJ_REF_FILENAME))
+    ois.registerSerializable(CLASS_PREFIX+"EmptyClass", EmptyClassTooMuch);
+
+    expect(() => ois.readObject()).toThrow(EOFException);
+})
+const EXTERNALIZABLE_FILENAME = "externalizable"
+test("readFields inside readExternal", () => {
+    class ExtChildReadFields implements Externalizable {
+        i_in_js: number; constructor(i=0) {this.i_in_js = i;}
+        readExternal(ois: ObjectInputStream) {
+            ois.readFields();
+        }
+    }
+    const ois = new ObjectInputStream(readSerializedFile(EXTERNALIZABLE_FILENAME))
+    ois.registerExternalizable(CLASS_PREFIX+"ExtChild", ExtChildReadFields);
+    expect(() => ois.readObject()).toThrow(NotActiveException);
+})
+test("externalizable reading too much STREAM_VERSION_2,1", () => {
+    class ExtChildTooMuch implements Externalizable {
+        i_in_js: number; constructor(i=0) {this.i_in_js = i;}
+        readExternal(ois: ObjectInputStream) {
+            this.i_in_js = ois.readInt();
+            expect(ois.readUTF()).toBe("testicle");
+            expect(ois.readObject()).toBeInstanceOf(EmptySerW);
+            ois.readObject();
+        }
+    }
+    const ois = new ObjectInputStream(readSerializedFile(EXTERNALIZABLE_FILENAME))
+    ois.registerExternalizable(CLASS_PREFIX+"ExtChild", ExtChildTooMuch);
+    ois.registerSerializable(CLASS_PREFIX+"EmptySerW", EmptySerW);
+    // STREAM_VERSION_2
+    expect(() => ois.readObject()).toThrow(new OptionalDataException(true));
+    // STREAM_VERSION_1
+    expect(() => ois.readObject()).toThrow(StreamCorruptedException);
+})
+test("read too much", () => {
+    const oisPrimitive = new ObjectInputStream(readSerializedFile(PRIMITIVES_FILENAME));
+    oisPrimitive.readEverything();
+    expect(() => oisPrimitive.readByte()).toThrow(EOFException);
+    expect(() => oisPrimitive.readObject()).toThrow(EOFException);
+
+    const oisObject = new ObjectInputStream(readSerializedFile(PRIMITIVE_WRAPPERS_FILENAME));
+    oisObject.readEverything();
+    expect(() => oisPrimitive.readByte()).toThrow(EOFException);
+    expect(() => oisPrimitive.readObject()).toThrow(EOFException);
+})
+test("readObject when in block", () => {
+    const ois = new ObjectInputStream(readSerializedFile(PRIMITIVES_FILENAME));
+    expect(() => ois.readObject()).toThrow(OptionalDataException);
+    ois.readInt();
+    expect(() => ois.readObject()).toThrow(OptionalDataException);
+})
+test("read[primitive] when not in block", () => {
+    const ois = new ObjectInputStream(readSerializedFile(PRIMITIVE_WRAPPERS_FILENAME));
+    expect(() => ois.readByte()).toThrow(EOFException);
+    ois.readObject();
+    expect(() => ois.readByte()).toThrow(EOFException);
+})
+
+const SERIALIZABLE_EXTENDS_FILENAME = "ser-extends";
+test("serializable parent and child: both registered", () => {
+    const ois = new ObjectInputStream(readSerializedFile(SERIALIZABLE_EXTENDS_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerParent", SerParent);
+    ois.registerSerializable(CLASS_PREFIX+"SerChild", SerChild);
+    expect(ois.readObject()).toEqual(new SerChild(69, 69));
+})
+test("serializable parent and child: child registered", () => {
+    const ois = new ObjectInputStream(readSerializedFile(SERIALIZABLE_EXTENDS_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerChild", SerChild);
+    expect(ois.readObject()).toEqual(new SerChild(5, 69));
+})
+test("serializable parent and child: parent registered", () => {
+    const ois = new ObjectInputStream(readSerializedFile(SERIALIZABLE_EXTENDS_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerParent", SerParent);
+    const obj = ois.readObject();
+    expect(obj).toMatchObject({parentField: 69, childField: 5});
+    expect(obj).toBeInstanceOf(SerParent);
+})
+test("serializable parent and child: both unregistered", () => {
+    const ois = new ObjectInputStream(readSerializedFile(SERIALIZABLE_EXTENDS_FILENAME));
+    expect(ois.readObject()).toMatchObject({parentField: 5, childField: 5});
+})
+test("serializable parent class in java but not js", () => {
+    class OtherSerParent implements Serializable {}
+    const ois = new ObjectInputStream(readSerializedFile(SERIALIZABLE_EXTENDS_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerParent", OtherSerParent);
+    ois.registerSerializable(CLASS_PREFIX+"SerChild", SerChild);
+    expect(() => ois.readObject()).toThrow(ClassNotFoundException);
+})
+
+// These tests test very subtle object replacement behavior
+const RESOLVE_FILENAME = "resolve";
+// 1. obj_a begins reading
+// 2. obj_b is read. it has obj_a as a field
+// 3. obj_a finishes reading and is replaced by something else
+// 4. make sure obj_b's field is the original obj_a and not the replacement
+test("readResolve circular reference", () => {
+    class SerWithChildObjA implements Serializable {
+        child: any
+        readResolve() {
+            return 5;
+        }
+    }
+    class SerWithChildObjB implements Serializable {
+        child: any;
+    }
+    const ois = new ObjectInputStream(readSerializedFile(RESOLVE_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerWithChildObjA", SerWithChildObjA);
+    ois.registerSerializable(CLASS_PREFIX+"SerWithChildObjB", SerWithChildObjB);
+
+    const obj_a = ois.readObject();
+    const obj_b = ois.readObject();
+
+    expect(obj_a).toBe(5);
+    expect(obj_b.child).toBeInstanceOf(SerWithChildObjA);
+})
+// 1. obj_a begins reading
+// 2. obj_b is read and reaplced by obj_a. now obj_a has 2 handles
+// 3. obj_a finishes reading and is replaced by something else
+// 4. obj_b is read again from the stream. make sure it is the original obj_a and not the replacement
+test("readResolve multiple handles", () => {
+    class SerWithChildObjA implements Serializable {
+        child: any
+        readResolve() {
+            return 5;
+        }
+    }
+    class SerWithChildObjB implements Serializable {
+        child: any;
+        readResolve() {
+            return this.child;
+        }
+    }
+    const ois = new ObjectInputStream(readSerializedFile(RESOLVE_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"SerWithChildObjA", SerWithChildObjA);
+    ois.registerSerializable(CLASS_PREFIX+"SerWithChildObjB", SerWithChildObjB);
+
+    const obj_a = ois.readObject();
+    const obj_b = ois.readObject();
+
+    expect(obj_a).toBe(5);
+    expect(obj_b).toBeInstanceOf(SerWithChildObjA);
+})
 
 // Errors in stream
 
@@ -530,17 +747,6 @@ test("eof in middle of primitive / object", () => {
     expect(() => ois2.readObject()).toThrow(EOFException);
 })
 
-
-// withOos("primitives", GenerateTests::genPrimitives);
-// withOos("floats", GenerateTests::genFloats);
-// withOos("int-limits", GenerateTests::genIntLimits);
-// withOos("primitive-wrappers", GenerateTests::genPrimitiveWrappers);
-// withOos("strings", GenerateTests::genStrings);
-// withOos("arrays", GenerateTests::genArrays);
-// withOos("obj-ref-vs-eq", GenerateTests::genObjRef);
-// genBlockEdgeCases("blocks");
-// withOos("circular", GenerateTests::genCircular);
-// withOos("handlers", GenerateTests::genHandlers);
 
 function testAst(filename: string, structure: any, run=(ois: ObjectInputStreamAST)=>{}) {
     const ois = new ObjectInputStreamAST(readSerializedFile(filename));

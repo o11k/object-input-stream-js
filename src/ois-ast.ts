@@ -392,7 +392,7 @@ function insertNode(parent: CSTNode, child: CSTNode): void {
     assert(parent.span.start <= child.span.start && child.span.end <= parent.span.end);
 
     child.parent = parent
-    
+
     if (parent.children.length === 0) {
         parent.children.push(child);
         return;

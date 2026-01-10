@@ -341,6 +341,63 @@ public class GenerateTests {
         oos.writeObject(new ExtChild(7));
     }
 
+    static class SerWithChildObjA implements Serializable {
+        Object child;
+        SerWithChildObjA(Object child) {this.child = child;}
+    }
+    static class SerWithChildObjB implements Serializable {
+        Object child;
+        SerWithChildObjB(Object child) {this.child = child;}
+    }
+    static void genResolveShenanigans(ObjectOutputStream oos) throws Exception {
+        SerWithChildObjA a = new SerWithChildObjA(null);
+        SerWithChildObjB b = new SerWithChildObjB(null);
+        a.child = b;
+        b.child = a;
+        oos.writeObject(a);
+        oos.writeObject(b);
+    }
+
+    // More than one reset at beginning, end, between blockdata->obj, obj->data, data->data, obj->obj
+    static void genResets(ObjectOutputStream oos) throws Exception {
+        oos.reset(); oos.reset();
+        oos.writeLong(0x6969696969696969L);
+        oos.reset(); oos.reset();
+        oos.writeLong(0x6969696969696969L);
+        oos.reset(); oos.reset();
+        oos.writeObject(new EmptyClass());
+        oos.reset(); oos.reset();
+        oos.writeObject(new EmptyClass());
+        oos.reset(); oos.reset();
+        oos.writeLong(0x6969696969696969L);
+        oos.reset(); oos.reset();
+    }
+
+    static class SerParent implements Serializable {
+        int parentField;
+        SerParent(int field) {parentField = field;}
+    }
+    static class SerChild extends SerParent {
+        int childField;
+        SerChild(int pField, int cField) {
+            super(pField);
+            childField = cField;
+        }
+    }
+    static void genSerializableInheritence(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(new SerChild(5,5));
+        oos.writeObject(new SerParent(5));
+    }
+
+
+    static void genExternalizable(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(new ExtChild(5));
+        oos.reset();
+        oos.useProtocolVersion(ObjectOutputStream.PROTOCOL_VERSION_1);
+        oos.writeObject(new ExtChild(5));
+        oos.write(new byte[]{1,1,1,1,1,1,1,1,1,1,1,1,1,1});
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
 
@@ -354,5 +411,9 @@ public class GenerateTests {
         genBlockEdgeCases("blocks");
         withOos("circular", GenerateTests::genCircular);
         withOos("handlers", GenerateTests::genHandlers);
+        withOos("resolve", GenerateTests::genResolveShenanigans);
+        withOos("resets", GenerateTests::genResets);
+        withOos("ser-extends", GenerateTests::genSerializableInheritence);
+        withOos("externalizable", GenerateTests::genExternalizable);
     }
 }

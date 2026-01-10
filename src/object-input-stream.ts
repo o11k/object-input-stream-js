@@ -506,14 +506,16 @@ export class ObjectInputStream {
         return cl;
     }
     protected readString(): string {
-        const tc = this.readTC();
+        const tc = this.peek1();
         let str: string;
         switch (tc) {
             case this.TC_STRING:
+                this.readTC();
                 str = this.readUTF();
                 break;
 
             case this.TC_LONGSTRING:
+                this.readTC();
                 str = this.readLongUTF();
                 break;
 
@@ -618,6 +620,10 @@ export class ObjectInputStream {
         if (!desc.hasBlockExternalData && desc.cl !== registered)
             throw new exc.ClassNotFoundException("Cannot deserialize instance of Externalizable class " + desc.name + " written using PROTOCOL_VERSION_1, without a matching JS-side class");
 
+        const objSuid = Object.getPrototypeOf(obj).constructor.serialVersionUID;
+        if (objSuid !== undefined && objSuid !== desc.suid)
+            throw new exc.InvalidClassException(desc.name, "stream suid " + desc.suid + " doesn't match available suid " + objSuid);
+
         const oldContext = this.curContext;
         this.curContext = null;
         try {
@@ -674,7 +680,7 @@ export class ObjectInputStream {
     protected readClassData(obj: Serializable, desc: ObjectStreamClass, readMethod: ReadMethodT): void {
         if (readMethod === null)
             readMethod = defaultReadMethod;
-        
+
         const oldContext = this.curContext;
         this.curContext = {
             desc: desc,
@@ -1144,6 +1150,7 @@ export interface Externalizable {
     readResolve?(): any
 }
 export interface ExternalizableCtor {
+    serialVersionUID?: bigint
     new (): Externalizable
 }
 export interface Enum {

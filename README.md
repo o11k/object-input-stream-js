@@ -303,7 +303,7 @@ const ast = ois.getAST();
 ## TODO
 
 - [X] ObjectInputStreamAST class: emit AST after parsing
-- [ ] Complete existing tests
+- [X] Complete existing tests
 - [ ] Expand tests
     - [ ] Classes
     - [ ] Class descriptors
