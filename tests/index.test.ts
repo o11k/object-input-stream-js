@@ -747,6 +747,15 @@ test("eof in middle of primitive / object", () => {
     expect(() => ois2.readObject()).toThrow(EOFException);
 })
 
+test("eof in middle of block", () => {
+    const ois = new ObjectInputStream(new Uint8Array([
+        0xac, 0xed, 0x00, 0x05,    // Header
+        c.TC_BLOCKDATA, 0xff,
+        0x69, 0x69, 0x69,
+    ]));
+    expect(ois.read1()).toThrow(StreamCorruptedException);
+})
+
 
 function testAst(filename: string, structure: any, run=(ois: ObjectInputStreamAST)=>{}) {
     const ois = new ObjectInputStreamAST(readSerializedFile(filename));

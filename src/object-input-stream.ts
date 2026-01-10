@@ -192,12 +192,16 @@ export class ObjectInputStream {
         if (this.remainingInBlock > 0)
             return;
 
+        // Skip empty blocks (OpenJDK doesn't do that)
         while (true) {
             const len = this.readBlockHeader();
             if (len < 0)
                 return;
             if (len > 0){
                 this.remainingInBlock = len;
+                if (this.data.length - this.offset < len) {
+                    throw new exc.StreamCorruptedException("unexpected EOF in middle of data block")
+                }
                 return;
             }
         }
