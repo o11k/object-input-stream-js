@@ -85,6 +85,8 @@ export class ObjectInputStream {
     protected proxyClasses: Map<string, typeof BaseProxy>;
     // Context if inside a readObject method. Null otherwise
     protected curContext: CallbackContext | null;
+    // Inside how many objects are we. Incremented at start of readObject and decremented at its end
+    protected depth: number;
 
     constructor(data: Uint8Array, options?: OisOptions) {
         this.data = data;
@@ -95,6 +97,7 @@ export class ObjectInputStream {
         this.registeredClasses = new Map();
         this.proxyClasses = new Map();
         this.curContext = null;
+        this.depth = 0;
 
         if (this.readUnsignedShort() !== this.STREAM_MAGIC)
             throw new exc.StreamCorruptedException("Missing STREAM_MAGIC");
@@ -361,7 +364,10 @@ export class ObjectInputStream {
     // ========== PROTECTED OBJECT READ METHODS ==========
     protected readReset(): void {
         if (this.readTC() !== this.TC_RESET) throw new exc.InternalError();
-        // TODO when depth > 0
+
+        if (this.depth > 0)
+            throw new exc.StreamCorruptedException("unexpected reset; recursion depth: " + this.depth);
+
         this.handleTable.reset();
     }
     protected readNull(): null {
@@ -786,6 +792,7 @@ export class ObjectInputStream {
         while ((tc = this.peekByte()) === this.TC_RESET)
             this.readReset();
 
+        this.depth++;
         try {
             switch (tc) {
                 case this.TC_NULL:
@@ -830,6 +837,7 @@ export class ObjectInputStream {
             }
         }
         finally {
+            this.depth--;
             this.setBlockDataMode(oldMode);
         }
     }
