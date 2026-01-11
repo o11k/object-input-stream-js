@@ -376,12 +376,38 @@ public class GenerateTests {
         oos.writeObject(new LinkedHashSet<>(Arrays.asList("a", "b", "c")));
         oos.writeObject(new TreeSet<>      (Arrays.asList(1, 2, 3)));
 
+        // Create anonymous subclasses to futher complicate the test
         Map<?,?> hm = new HashMap      <Object, Object>(){{put(  1,   2); put("a", "b");}};
         Map<?,?> lm = new LinkedHashMap<Object, Object>(){{put(  2, "a"); put(  1, "a");}};
         Map<?,?> tm = new TreeMap      <Object, Object>(){{put("a",   2); put("b",   2);}};
         oos.writeObject(hm);
         oos.writeObject(lm);
         oos.writeObject(tm);
+    }
+
+    static class MyHandler implements InvocationHandler, Serializable {
+        int multiplier;
+        MyHandler(int multiplier) {
+            this.multiplier = multiplier;
+        }
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            if (method.getName().equals("multiply")) {
+                Integer arg1 = (Integer)args[0];
+                return arg1 * multiplier;
+            }
+            return null;
+        }
+    }
+
+    static void genProxy(ObjectOutputStream oos) throws Exception {
+        MyHandler handler = new MyHandler(5);
+        Object proxy = Proxy.newProxyInstance(
+            GenerateTests.class.getClassLoader(),
+            new Class<?>[] { Comparable.class, AutoCloseable.class, Runnable.class },
+            handler
+        );
+        oos.writeObject(proxy);
     }
 
     public static void main(String[] args) throws Exception {
@@ -405,5 +431,6 @@ public class GenerateTests {
         withOos("classdescs", GenerateTests::genClassDescs);
         withOos("enums", GenerateTests::genEnums);
         withOos("containers", GenerateTests::genContainers);
+        withOos("proxy", GenerateTests::genProxy);
     }
 }

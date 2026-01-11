@@ -295,7 +295,7 @@ const ast = ois.getAST();
 
 > WARNING: The AST structure and API are unstable, and may change at any time.
 
-> Note: an AST cna be reliably produced for a stream that has been parsed fully and without errors.
+> Note: an AST can be reliably produced only for a stream that has been parsed fully and without errors.
 
 ## Limitations
 
@@ -309,7 +309,8 @@ const ast = ois.getAST();
 - [ ] Expand tests
     - [X] Classes
     - [X] Class descriptors
-    - [ ] Proxy classes
+    - [X] Proxy classes
     - [X] Enums
     - [X] java.util handlers
+    - [ ] exceptions in stream
     - [ ] Sudden death: a brazillian randomly generated primitives and objects with a complex reference graph and readObject/readExternal

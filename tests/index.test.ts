@@ -9,7 +9,7 @@ import {
     ast
 } from '../src/index';
 import { ClassNotFoundException, EOFException, InvalidClassException, InvalidObjectException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
-import { BaseFallbackEnum, BaseFallbackExternalizable, BaseFallbackSerializable, ObjectStreamClass } from '../src/object-input-stream';
+import { BaseFallbackEnum, BaseFallbackExternalizable, BaseFallbackSerializable, BaseProxy, InvocationHandler, ObjectStreamClass } from '../src/object-input-stream';
 
 // For constants
 const c = ObjectInputStream;
@@ -517,6 +517,36 @@ test("container class handlers", () => {
     expect(new Map(ois.readObject())).toEqual(new Map<any, any>([[  1,   2], ["a", "b"]]));
     expect(new Map(ois.readObject())).toEqual(new Map<any, any>([[  2, "a"], [  1, "a"]]));
     expect(new Map(ois.readObject())).toEqual(new Map<any, any>([["a",   2], ["b",   2]]));
+})
+
+const PROXY_FILENAME = "proxy"
+test("proxy classes", () => {
+    class MyHandler implements InvocationHandler, Serializable {
+        multiplier: number = 0;
+
+        invoke(proxy: BaseProxy, method: string, args: any[]) {
+                if (method === "multiply") {
+                    const arg1 = args[0];
+                    return arg1 * this.multiplier;
+                }
+                throw new TypeError();
+        }
+    }
+
+    const ois = new ObjectInputStream(readSerializedFile(PROXY_FILENAME));
+    ois.registerSerializable(CLASS_PREFIX+"MyHandler", MyHandler);
+
+    const proxy = ois.readObject();
+    expect(proxy).toBeInstanceOf(BaseProxy);
+    if (!(proxy instanceof BaseProxy)) throw new Error();
+    expect(proxy.h).toBeInstanceOf(MyHandler);
+    expect(Object.getPrototypeOf(proxy).constructor.$proxyInterfaces).toEqual([
+        "java.lang.Comparable",
+        "java.lang.AutoCloseable",
+        "java.lang.Runnable",
+    ])
+    expect(proxy.multiply(123)).toBe(123 * 5);
+    expect(() => proxy.whatever("what", "ever")).toThrow(TypeError);
 })
 
 // User errors

@@ -428,7 +428,7 @@ export class ObjectInputStream {
             const classId = this.proxyClasses.size.toString();
             const className = "JavaProxy" + classId;
             const newClass = {[className]: class extends BaseProxy {
-                static readonly proxyInterfaces = proxyInterfaces;
+                static readonly $proxyInterfaces = proxyInterfaces;
             }}[className];
 
             this.proxyClasses.set(ifacesStr, newClass);
@@ -508,6 +508,9 @@ export class ObjectInputStream {
         }[name];
         // @ts-expect-error
         cl.displayName = name
+
+        if (superClass === BaseFallbackSerializable)
+            cl.prototype.readObject = BaseFallbackSerializable.prototype.readObject;
 
         if (type === "enum")
             return new Proxy(cl, EnumProxyHandler);
@@ -616,7 +619,7 @@ export class ObjectInputStream {
             throw new exc.InvalidClassException(desc.name, "not serializable and not externalizable");
         }
 
-        if (typeof result.readResolve === "function") {
+        if (typeof result.readResolve === "function" && !(result instanceof BaseProxy)) {
             const replaced = result.readResolve();
             this.handleTable.replaceObject(handle, result, replaced);
             return replaced;
@@ -837,6 +840,9 @@ export class ObjectInputStream {
 
         if (this.curContext.alreadyReadFields)
             throw new exc.NotActiveException("Fields already read");
+
+        if (this.curContext.desc.isProxy)
+            return new Map();
 
         const fields = this.curContext.desc.fields;
         if (fields === null)
@@ -1094,6 +1100,7 @@ export class ObjectStreamClass<IS_PROXY extends boolean = boolean> {
             throw new exc.IllegalStateException("already initialized proxy");
 
         this.cl = cl;
+        this.serializable = true;
         this.proxyInterfaces = proxyInterfaces;
         this.annotation = annotation;
         this.superDesc = superDesc;
@@ -1117,33 +1124,37 @@ export type FieldDesc = {
 }
 
 export interface InvocationHandler {
-    invoke: (proxy: BaseProxy, method: string, args: any[]) => any
+    invoke(proxy: BaseProxy, method: string, args: any[]): any
 }
 
 export abstract class BaseProxy {
-    static readonly proxyInterfaces: string[] = []
+    static readonly $proxyInterfaces: string[] = [];
 
-    h?: InvocationHandler
+    [method: string]: (...args: any[]) => any;
+    // @ts-expect-error
+    h?: InvocationHandler;
 
     constructor(h?: InvocationHandler) {
         this.h = h;
+        const self = this;
 
-        return new Proxy(this, {get: (target, prop, receiver) => {
-            if (typeof prop !== "string")
-                return Reflect.get(target, prop, receiver);
+        return new Proxy(this, {
+            get: (target, prop, receiver) => {
+                const value = Reflect.get(target, prop, receiver);
+                if (typeof prop !== "string" || typeof value !== "undefined")
+                    return value;
 
-            if (this.h === undefined || typeof this.h.invoke !== "function")
-                throw new TypeError("invocation handler doesn't have invoke method");
-
-            const h = this.h;
-            return (...args: any[]) => {
-                return h.invoke(target, prop, args);
-            }
-        }})
-    }
-
-    static getInterfaces(): string[] {
-        return this.proxyInterfaces;
+                return (...args: any[]) => {
+                    if (typeof self.h?.invoke !== "function")
+                        throw new TypeError("invocation handler doesn't have invoke method");
+                    return self.h.invoke(target, prop, args);
+                }
+            },
+            has(target, prop) {
+                return (typeof self.h?.invoke === "function" && typeof prop === "string")
+                    || Reflect.has(target, prop);
+            },
+        })
     }
 }
 
