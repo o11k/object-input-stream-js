@@ -312,5 +312,6 @@ const ast = ois.getAST();
     - [X] Proxy classes
     - [X] Enums
     - [X] java.util handlers
-    - [ ] exceptions in stream
+    - [X] exceptions in stream
     - [ ] Sudden death: a brazillian randomly generated primitives and objects with a complex reference graph and readObject/readExternal
+- [ ] AST: real handles

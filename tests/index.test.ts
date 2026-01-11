@@ -8,7 +8,7 @@ import {
     ObjectInputStreamAST,
     ast
 } from '../src/index';
-import { ClassNotFoundException, EOFException, InvalidClassException, InvalidObjectException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
+import { ClassNotFoundException, EOFException, InvalidClassException, InvalidObjectException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException, WriteAbortedException } from '../src/exceptions';
 import { BaseFallbackEnum, BaseFallbackExternalizable, BaseFallbackSerializable, BaseProxy, InvocationHandler, ObjectStreamClass } from '../src/object-input-stream';
 
 // For constants
@@ -547,6 +547,24 @@ test("proxy classes", () => {
     ])
     expect(proxy.multiply(123)).toBe(123 * 5);
     expect(() => proxy.whatever("what", "ever")).toThrow(TypeError);
+})
+
+const EXCEPTIONS_FILENAME = "exceptions"
+test("exception", () => {
+    const ois = new ObjectInputStream(readSerializedFile(EXCEPTIONS_FILENAME));
+    
+    const empty1 = ois.readObject();
+
+    try {
+        ois.readObject();
+        throw new Error("shouldn't have reached that far");
+    } catch (e) {
+        expect(e).toBeInstanceOf(WriteAbortedException);
+    }
+
+    const empty2 = ois.readObject();
+    expect(empty1).toEqual(empty2);
+    expect(empty1).not.toBe(empty2);
 })
 
 // User errors

@@ -410,6 +410,25 @@ public class GenerateTests {
         oos.writeObject(proxy);
     }
 
+    static class Throws implements Serializable {
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.defaultWriteObject();
+            out.writeInt(123);
+            throw new IOException("bruh");
+        }
+    }
+    static void genExceptions(ObjectOutputStream oos) throws Exception {
+        EmptyClass empty = new EmptyClass();
+        Throws throws1 = new Throws();
+
+        oos.writeObject(empty);
+        try {
+            oos.writeObject(throws1);
+        } catch (IOException e) {}
+
+        oos.writeObject(empty);
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
 
@@ -432,5 +451,6 @@ public class GenerateTests {
         withOos("enums", GenerateTests::genEnums);
         withOos("containers", GenerateTests::genContainers);
         withOos("proxy", GenerateTests::genProxy);
+        withOos("exceptions", GenerateTests::genExceptions);
     }
 }
