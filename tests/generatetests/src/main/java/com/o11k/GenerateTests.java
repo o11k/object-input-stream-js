@@ -418,6 +418,36 @@ public class GenerateTests {
         oos.writeObject(ObjectStreamClass.lookup(ExtChild.class));
     }
 
+    enum MyEnum {
+        MY_VALUE_1(1,1),
+        MY_VALUE_2(2,2),
+        MY_VALUE_3(3,3),
+        MY_VALUE_4(4,4),
+        MY_VALUE_5(5,5),
+        ;
+
+        private final int a;
+        private final int b;
+
+        MyEnum(int a, int b) {
+            this.a = a;
+            this.b = b;
+        }
+
+        public long getValue() {
+            return (((long)this.a) << 32L) + ((long)this.b);
+        }
+    }
+    static void genEnums(ObjectOutputStream oos) throws Exception {
+        oos.writeObject(MyEnum.class);
+        oos.writeObject(ObjectStreamClass.lookup(MyEnum.class));
+        oos.writeObject(MyEnum.MY_VALUE_1);
+        oos.writeObject(MyEnum.MY_VALUE_2);
+        oos.writeObject(MyEnum.MY_VALUE_3);
+        oos.writeObject(MyEnum.MY_VALUE_4);
+        oos.writeObject(MyEnum.MY_VALUE_5);
+    }
+
     public static void main(String[] args) throws Exception {
         new File(PATH_DIR).mkdirs();
 
@@ -437,5 +467,6 @@ public class GenerateTests {
         withOos("externalizable", GenerateTests::genExternalizable);
         withOos("classes", GenerateTests::genClasses);
         withOos("classdescs", GenerateTests::genClassDescs);
+        withOos("enums", GenerateTests::genEnums);
     }
 }

@@ -9,7 +9,7 @@ import {
     ast
 } from '../src/index';
 import { ClassNotFoundException, EOFException, InvalidClassException, NotActiveException, NullPointerException, OptionalDataException, StreamCorruptedException, UTFDataFormatException } from '../src/exceptions';
-import { BaseFallbackExternalizable, BaseFallbackSerializable, ObjectStreamClass } from '../src/object-input-stream';
+import { BaseFallbackEnum, BaseFallbackExternalizable, BaseFallbackSerializable, ObjectStreamClass } from '../src/object-input-stream';
 
 // For constants
 const c = ObjectInputStream;
@@ -448,6 +448,41 @@ test("read class descriptors", () => {
         name: CLASS_PREFIX+"ExtChild",
         isEnum: false, serializable: false, externalizable: true, hasWriteObjectData: false, hasBlockExternalData: true,
     });
+})
+
+const ENUMS_FILENAME = "enums";
+test("enums", () => {
+    const oisNoHandlers = new ObjectInputStream(readSerializedFile(ENUMS_FILENAME));
+    expect(oisNoHandlers.readObject().prototype).toBeInstanceOf(BaseFallbackEnum);
+    expect(oisNoHandlers.readObject()).toMatchObject({
+        name: CLASS_PREFIX+"MyEnum",
+        isEnum: true, serializable: true, externalizable: false, hasWriteObjectData: false, hasBlockExternalData: false,
+    });
+    expect(oisNoHandlers.readObject()).toBe("MY_VALUE_1");
+    expect(oisNoHandlers.readObject()).toBe("MY_VALUE_2");
+    expect(oisNoHandlers.readObject()).toBe("MY_VALUE_3");
+    expect(oisNoHandlers.readObject()).toBe("MY_VALUE_4");
+    expect(oisNoHandlers.readObject()).toBe("MY_VALUE_5");
+
+    const ois = new ObjectInputStream(readSerializedFile(ENUMS_FILENAME));
+    const MyEnum = {
+        MY_VALUE_1: "asd",
+        MY_VALUE_2: 123,
+        //MY_VALUE_3: ,
+        MY_VALUE_4: undefined,
+        MY_VALUE_5: {},
+    };
+    MyEnum.MY_VALUE_5 = MyEnum;
+    ois.registerEnum(CLASS_PREFIX+"MyEnum", MyEnum);
+
+    expect(ois.readObject()).toBe(MyEnum);
+    expect(ois.readObject()).toMatchObject({cl: MyEnum});
+
+    expect(ois.readObject()).toBe("asd");
+    expect(ois.readObject()).toBe(123);
+    expect(() => ois.readObject()).toThrow(InvalidClassException);
+    expect(ois.readObject()).toBe(undefined);
+    expect(ois.readObject()).toBe(MyEnum);
 })
 
 // User errors

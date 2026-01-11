@@ -501,11 +501,16 @@ export class ObjectInputStream {
         }[type];
         const superClass = superDesc !== null ? (superDesc.cl as new () => any) : fallbackSuperClass;
 
-        const cl = {[name]: class extends superClass {
-            static $desc = desc
-        }}[name];
+        const cl: (new () => BaseFallbackClass) = {
+            [name]: class extends superClass {
+                static $desc = desc
+            }
+        }[name];
         // @ts-expect-error
         cl.displayName = name
+
+        if (type === "enum")
+            return new Proxy(cl, EnumProxyHandler);
 
         return cl;
     }
@@ -1180,23 +1185,21 @@ export abstract class BaseFallbackExternalizable extends BaseFallbackClass imple
         this.$annotation = ois.readEverything();
     }
 }
-export abstract class BaseFallbackEnum extends BaseFallbackClass {
-    [key: string]: string
 
-    constructor() {
-        super();
-        return new Proxy(this, {
-            get: (target, prop, receiver) => {
-                if (typeof prop !== "string")
-                    return Reflect.get(target, prop, receiver);
-                return prop;
-            },
-            has(target, prop) {
-                if (typeof prop === "string") return true;
-                return prop in target;
-            },
-        })
-    }
+export abstract class BaseFallbackEnum extends BaseFallbackClass {
+    // @ts-expect-error
+    static [key: string]: string
+}
+export const EnumProxyHandler: ProxyHandler<BaseFallbackEnum> = {
+    get(target, prop) {
+        if (prop in target)
+            return (target as any)[prop];
+        if (typeof prop !== "string") return undefined;
+        return prop;
+    },
+    has(target, prop) {
+        return (prop in target) || (typeof prop === "string");
+    },
 }
 
 type ClassType = "serializable" | "externalizable" | "enum" | "general"
