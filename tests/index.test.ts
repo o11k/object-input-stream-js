@@ -960,10 +960,13 @@ function testAst(filename: string, structure: any, run=(ois: ObjectInputStreamAS
     run(ois);
     ois.readEverything();
     const astRoot = ois.getAST().root;
+    // console.log(astRoot.children[2].children.length)
     expect(astRoot).toMatchObject(structure)
 
     // function pp(node: ast.Node, indent=0) {
     //     let res = " ".repeat(indent) + node.type;
+    //     if (node.type === "object") res += "/" + node.objectType;
+    //     if (node.type === "primitive") res += "/" + node.dataType;
     //     if ((node as any).value !== undefined) res += ": " + (node as any).value;
     //     if (node.children !== null && node.children.length > 0)
     //         res += "\n" + node.children.map(c => pp(c,indent+1)).join("\n")
@@ -1048,8 +1051,37 @@ test("ast: handlers", () => {
     })
 })
 
+test("ast: resets", () => {
+    testAst(RESET_FILENAME, {children: [{},{},{children: [
+        // oos.reset(); oos.reset();
+        {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+        {type: "blockdata-sequence", children: [
+            // oos.writeLong(0x6969696969696969L);
+            {type: "blockdata"},
+            // oos.reset(); oos.reset();
+            {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+            // oos.writeLong(0x6969696969696969L);
+            {type: "blockdata"},
+        ]},
+        // oos.reset(); oos.reset();
+        {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+        // oos.writeObject(new EmptyClass());
+        {type: "object", objectType: "new-object"},
+        // oos.reset(); oos.reset();
+        {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+        // oos.writeObject(new EmptyClass());
+        {type: "object", objectType: "new-object"},
+        // oos.reset(); oos.reset();
+        {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+        {type: "blockdata-sequence", children: [
+            // oos.writeLong(0x6969696969696969L);
+            {type: "blockdata"},
+        ]},
+        // oos.reset(); oos.reset();
+        {type: "object", objectType: "reset"}, {type: "object", objectType: "reset"},
+    ]}]}
+)})
+
 // readObject is called even if not SC_WRITE_METHOD
 // header      class A   suid=0 Serializable int x              "kaki"           x=69
 // aced0005 73 72 000141 0000000000000000 02 000149000178 78 70 770600046b616b69 00000045
-
-// multiple resets before / after / betweem objects and blocks

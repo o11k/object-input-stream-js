@@ -1,3 +1,7 @@
+/**
+ * Forgive me father, for I have sinned.
+ */
+
 import ObjectInputStream, { ast, Externalizable, FieldDesc, ObjectStreamClass, Serializable, type OisOptions, internal } from ".";
 import * as exc from "./exceptions";
 
@@ -16,6 +20,8 @@ export class ObjectInputStreamAST extends ObjectInputStream {
     protected cstStack: CSTNode[];
     protected finalized = false;
     protected ast: ast.Ast | null = null;
+    // How many resets happened so far
+    protected epoch: number = 0;
 
     constructor(data: Uint8Array, options?: OisOptions) {
         super(data, options);
@@ -101,6 +107,25 @@ export class ObjectInputStreamAST extends ObjectInputStream {
     protected readLongUTF() { return super.readLongUTF(); }
     @traceMethod("utf-body", {keep: true})
     protected readUTFBody(byteLength: number) { return super.readUTFBody(byteLength); }
+
+    @traceMethod("do-reset")
+    protected reset(): void {
+        assert(this.cstStack.length > 0);
+        const currNode = this.cstStack[this.cstStack.length-1];
+        assert(currNode.type === "do-reset");
+        currNode.value = ++this.epoch;
+        return super.reset();
+    }
+
+    @traceMethod("new-handle")
+    protected newHandle(obj: any): number {
+        assert(this.cstStack.length > 0);
+        const currNode = this.cstStack[this.cstStack.length-1];
+        assert(currNode.type === "new-handle");
+        const handle = super.newHandle(obj);
+        currNode.value = {epoch: this.epoch, handle: handle};
+        return handle;
+    }
 
     @traceMethod("object/reset")
     protected readReset() { return super.readReset(); }
@@ -212,13 +237,15 @@ function cstToAst(cst: CSTNode, data: Uint8Array): ast.Ast {
     // Remove calls to "readByte" from tc
     removeNodesWhere(cst, node => node.type === "primitive/byte" && node.parent?.type === "tc");
     // Remove empty nodes that shouldn't be empty
-    removeNodesWhere(cst, node => (
-        node.span.start === node.span.end &&
-        node.type !== "contents" &&
-        node.type !== "serial-data" &&
-        node.type !== "external-data" &&
-        node.type !== "class-data-no-wr"
-    ), {recursive: true});
+    removeNodesWhere(cst, node => {
+        if (node.span.start < node.span.end) return false;
+        return (
+            node.type !== "contents" &&
+            node.type !== "serial-data" &&
+            node.type !== "external-data" &&
+            node.type !== "class-data-no-wr"
+        )
+}, {recursive: true});
 
     handleBlocks(cst);
 
@@ -240,6 +267,16 @@ function hoistBlockHeaders(cst: CSTNode): void {
         }
         assert(header.parent !== null);
     }
+}
+
+function pp(node: ast.Node, indent=0) {
+    let res = " ".repeat(indent) + node.type;
+    if (node.type === "object") res += "/" + node.objectType;
+    if (node.type === "primitive") res += "/" + node.dataType;
+    if ((node as any).value !== null) res += ": " + (node as any).value;
+    if (node.children !== null && node.children.length > 0)
+        res += "\n" + node.children.map(c => pp(c,indent+1)).join("\n")
+    return res;
 }
 
 /**
@@ -283,6 +320,23 @@ function hoistFirstChild(child: CSTNode) {
 }
 
 function handleBlocks(cst: CSTNode) {
+    // resets that are in between block headers
+    const blockResets = removeNodesWhere(cst, node => {
+        if (node.type !== "object/reset") return false;
+        assert(node.parent !== null);
+        const siblings = node.parent.children;
+        const index = siblings.indexOf(node);
+        assert(0 <= index);
+        
+        const nextRight = siblings.slice(index+1).find(node => node.type !== "object/reset");
+        const nextLeft  = siblings.slice(0,index).reverse().find(node => node.type !== "object/reset");
+
+        return (
+               nextRight !== undefined && nextRight.type === "block-header"
+            && nextLeft  !== undefined && nextLeft.type  === "block-header"
+        )
+    }, {recursive: true})
+
     const blocks =
         removeNodesWhere(cst, node => node.type === "block-header", {recursive: true})
         .filter(header => header.span.start < header.span.end)
@@ -299,10 +353,18 @@ function handleBlocks(cst: CSTNode) {
         return;
 
     // Group blocks into contiguous sequences
-    let currSequence: typeof blocks = [blocks[0]];
-    const blockSequences: (typeof blocks)[] = [currSequence];
+    let currSequence: (typeof blocks[0] | typeof blockResets[0])[] = [blocks[0]];
+    const blockSequences: (typeof currSequence)[] = [currSequence];
     for (let i=1; i<blocks.length; i++) {
-        const prev = blocks[i-1];
+        let prev = currSequence[currSequence.length-1];
+        
+        while (blockResets.length > 0 && blockResets[0].span.start === prev.span.end) {
+            const reset = blockResets.shift();
+            assert(reset !== undefined);
+            currSequence.push(reset);
+            prev = reset;
+        }
+
         const curr = blocks[i];
         if (prev.span.end === curr.span.start) {
             currSequence.push(curr);
@@ -312,11 +374,14 @@ function handleBlocks(cst: CSTNode) {
         }
     }
 
+    assert(blockResets.length === 0);
+
     for (const sequence of blockSequences) {
         assert(sequence.length > 0);
         assert(sequence.every(block => block.parent === sequence[0].parent));
 
         const parent = sequence[0].parent;
+        assert(parent !== null);
         const start = sequence[0].span.start;
         const end = sequence[sequence.length-1].span.end;
 
@@ -336,7 +401,12 @@ function handleBlocks(cst: CSTNode) {
             children: [],
         }
 
-        sequenceNode.children = sequence.map(({header, span}) => {
+        sequenceNode.children = sequence.map((seqItem) => {
+            if ("type" in seqItem && seqItem.type === "object/reset") {
+                return seqItem;
+            }
+
+            const {parent, header, span} = seqItem as typeof blocks[0];
             const result = {
                 type: "blockdata",
                 span: span,

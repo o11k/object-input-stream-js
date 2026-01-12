@@ -362,13 +362,19 @@ export class ObjectInputStream {
     }
 
     // ========== PROTECTED OBJECT READ METHODS ==========
+    protected reset(): void {
+        this.handleTable.reset();
+    }
+    protected newHandle(obj: any): number {
+        return this.handleTable.newHandle(obj);
+    }
     protected readReset(): void {
         if (this.readTC() !== this.TC_RESET) throw new exc.InternalError();
 
         if (this.depth > 0)
             throw new exc.StreamCorruptedException("unexpected reset; recursion depth: " + this.depth);
 
-        this.handleTable.reset();
+        this.reset();
     }
     protected readNull(): null {
         if (this.readTC() !== this.TC_NULL) throw new exc.InternalError();
@@ -386,7 +392,7 @@ export class ObjectInputStream {
             throw new exc.NullPointerException();
 
         const result = classDesc.cl;
-        const handle = this.handleTable.newHandle(result);
+        const handle = this.newHandle(result);
         return result;
     }
     protected readClassDesc(): ObjectStreamClass | null {
@@ -412,7 +418,7 @@ export class ObjectInputStream {
     protected readProxyDesc(): ObjectStreamClass<true> {
         if (this.readTC() !== this.TC_PROXYCLASSDESC) throw new exc.InternalError();
         const desc = new ObjectStreamClass(null, null, true);
-        const handle = this.handleTable.newHandle(desc);
+        const handle = this.newHandle(desc);
 
         const proxyInterfaces: string[] = [];
         const numIfaces = this.readInt();
@@ -448,7 +454,7 @@ export class ObjectInputStream {
         const name = this.readUTF();
         const suid = this.readLong();
         const desc = new ObjectStreamClass(name, suid, false);
-        const handle = this.handleTable.newHandle(desc);
+        const handle = this.newHandle(desc);
 
         const flags = this.readUnsignedByte();
         const fields = this.readFieldDescs(name);
@@ -546,7 +552,7 @@ export class ObjectInputStream {
             default:
                 throw new exc.StreamCorruptedException("invalid string type code: " + tcHex(tc));
         }
-        this.handleTable.newHandle(str);
+        this.newHandle(str);
         return str;
     }
     protected readArray(): any[] {
@@ -558,7 +564,7 @@ export class ObjectInputStream {
             throw new exc.StreamCorruptedException("Array length is negative");
 
         const result: any[] = [];
-        const handle = this.handleTable.newHandle(result);
+        const handle = this.newHandle(result);
 
         if (!desc?.name?.startsWith("[") || desc.name.length < 2)
             throw new exc.StreamCorruptedException("Invalid array desc name: " + desc?.name);
@@ -595,7 +601,7 @@ export class ObjectInputStream {
         if (!desc?.isEnum)
             throw new exc.InvalidClassException(desc?.name ?? null, "non-enum class");
 
-        const handle = this.handleTable.newHandle(null);
+        const handle = this.newHandle(null);
         const constantName = this.readString();
 
         if (!(constantName in desc.cl))
@@ -615,7 +621,7 @@ export class ObjectInputStream {
             throw new exc.NullPointerException();
 
         const result = new desc.cl();
-        const handle = this.handleTable.newHandle(result);
+        const handle = this.newHandle(result);
 
         if (desc.externalizable) {
             this.readExternalData(result, desc);
@@ -729,7 +735,7 @@ export class ObjectInputStream {
     protected readFatalException(): any {
         if (this.readTC() !== this.TC_EXCEPTION) throw new exc.InternalError();
 
-        this.handleTable.reset();
+        this.reset();
 
         const oldMode = this.setBlockDataMode(false);
         const tc = this.peekByte()
@@ -742,7 +748,7 @@ export class ObjectInputStream {
 
         // This line is required by the spec and implemented in OpenJDK's ObjectOutputStream,
         // but not in OpenJDK's ObjectInputStream. This is a bug in OpenJDK.
-        this.handleTable.reset();
+        this.reset();
 
         return result;
     }
