@@ -288,7 +288,7 @@ type OisOptions = {
 import { ObjectInputStreamAST } from 'object-input-stream';
 
 const data = new Uint8Array( /* Java object serialization stream data */ );
-const ois = new ObjectInputStream(data);
+const ois = new ObjectInputStreamAST(data);
 
 // Read everything
 
