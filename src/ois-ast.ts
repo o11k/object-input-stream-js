@@ -11,6 +11,7 @@ type CSTNode = {
     span: {start: number, end: number},
     value: unknown,
     error?: any,
+    handle?: {epoch: number, handle: number},
     children: CSTNode[],
 }
 
@@ -108,22 +109,28 @@ export class ObjectInputStreamAST extends ObjectInputStream {
     @traceMethod("utf-body", {keep: true})
     protected readUTFBody(byteLength: number) { return super.readUTFBody(byteLength); }
 
-    @traceMethod("do-reset")
     protected reset(): void {
         assert(this.cstStack.length > 0);
         const currNode = this.cstStack[this.cstStack.length-1];
-        assert(currNode.type === "do-reset");
+        assert(currNode.type === "object/reset" || currNode.type === "object/exception");
         currNode.value = ++this.epoch;
         return super.reset();
     }
 
-    @traceMethod("new-handle")
     protected newHandle(obj: any): number {
         assert(this.cstStack.length > 0);
         const currNode = this.cstStack[this.cstStack.length-1];
-        assert(currNode.type === "new-handle");
+        assert(
+               currNode.type === "object/class"
+            || currNode.type === "proxy-desc"
+            || currNode.type === "non-proxy-desc"
+            || currNode.type === "object/string"
+            || currNode.type === "object/array"
+            || currNode.type === "object/enum"
+            || currNode.type === "object/instance"
+        );
         const handle = super.newHandle(obj);
-        currNode.value = {epoch: this.epoch, handle: handle};
+        currNode.handle = {epoch: this.epoch, handle: handle};
         return handle;
     }
 
@@ -240,10 +247,10 @@ function cstToAst(cst: CSTNode, data: Uint8Array): ast.Ast {
     removeNodesWhere(cst, node => {
         if (node.span.start < node.span.end) return false;
         return (
-            node.type !== "contents" &&
-            node.type !== "serial-data" &&
-            node.type !== "external-data" &&
-            node.type !== "class-data-no-wr"
+               node.type !== "contents"
+            && node.type !== "serial-data"
+            && node.type !== "external-data"
+            && node.type !== "class-data-no-wr"
         )
 }, {recursive: true});
 
@@ -503,8 +510,6 @@ function trasformCSTBottomUp<T>(cst: CSTNode, transform: (node: CSTNode, transfo
 }
 
 function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
-    const fakeHandle = {epoch: -1, handle: -1};
-
     if (node.type.startsWith("primitive/")) {
         assert(children.length === 0);
         const dataType = node.type.split("/", 2)[1];
@@ -619,7 +624,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             assert(children.length === 1);
             const tc = children[0];
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_RESET);
-            return {type: "object", objectType: "reset", newEpoch: -1, span: node.span, children: [tc]}
+            assert(typeof node.value === "number");
+            return {type: "object", objectType: "reset", newEpoch: node.value, span: node.span, children: [tc]}
         }
         case "object/null": {
             assert(children.length === 1);
@@ -633,7 +639,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             const ref = children[1];
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_REFERENCE);
             assert(ref.type === "primitive" && ref.dataType === "int");
-            return {type: "object", objectType: "prev-object", span: node.span, value: fakeHandle, children: [tc, ref]}
+            // TODO epoch
+            return {type: "object", objectType: "prev-object", span: node.span, value: {epoch: -1, handle: ref.value}, children: [tc, ref]}
         }
         case "object/class": {
             assert(children.length === 1);
@@ -641,7 +648,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             const desc = children[0];
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_CLASS);
             assertDescNode(desc);
-            return {type: "object", objectType: "new-class", span: node.span, handle: fakeHandle, children: [tc, desc]}
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-class", span: node.span, handle: node.handle, children: [tc, desc]}
         }
         case "object/class-desc": {
             assert(children.length === 1);
@@ -663,7 +671,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             const superDesc = children[2 + numIfaces.value + 1];
             assert(annotation.type === "annotation");
             assertDescNode(superDesc);
-            return {type: "object", objectType: "new-class-desc", handle: fakeHandle, span: node.span, children: [tc, {
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-class-desc", handle: node.handle, span: node.span, children: [tc, {
                 type: "proxy-class-desc-info",
                 span: {start: node.span.start+1, end: node.span.end},
                 children: [numIfaces, ...ifaces, annotation, superDesc],
@@ -685,7 +694,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             assert(fields.type === "fields");
             assert(annotation.type === "annotation");
             assertDescNode(superDesc);
-            return {type: "object", objectType: "new-class-desc", handle: fakeHandle, span: node.span, children: [
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-class-desc", handle: node.handle, span: node.span, children: [
                 tc, name, suid, {
                     type: "class-desc-info",
                     span: {start: suid.span.end, end: node.span.end},
@@ -705,10 +715,12 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             assert(tc.type === "tc");
             if (tc.value === ObjectInputStream.TC_STRING) {
                 assert(utf.type === "utf");
-                return {type: "object", objectType: "new-string", value: utf.value, handle: fakeHandle, span: node.span, children: [tc, utf]};
+                assert(node.handle !== undefined);
+                return {type: "object", objectType: "new-string", value: utf.value, handle: node.handle, span: node.span, children: [tc, utf]};
             } else if (tc.value === ObjectInputStream.TC_LONGSTRING) {
                 assert(utf.type === "long-utf");
-                return {type: "object", objectType: "new-string", value: utf.value, handle: fakeHandle, span: node.span, children: [tc, utf]};
+                assert(node.handle !== undefined);
+                return {type: "object", objectType: "new-string", value: utf.value, handle: node.handle, span: node.span, children: [tc, utf]};
             } else {
                 throw new exc.InternalError();
             }
@@ -730,7 +742,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             } else {
                 assert(values.every(v => v.type === "object"));
             }
-            return {type: "object", objectType: "new-array", handle: fakeHandle, span: node.span, children: [tc, desc, len, {
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-array", handle: node.handle, span: node.span, children: [tc, desc, len, {
                 type: "values", span: {start: len.span.end, end: node.span.end}, children: values
             }]}
         }
@@ -742,7 +755,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_ENUM);
             assertDescNode(desc);
             assertStringNode(name);
-            return {type: "object", objectType: "new-enum", span: node.span, handle: fakeHandle, children: [tc, desc, name]}
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-enum", span: node.span, handle: node.handle, children: [tc, desc, name]}
         }
         case "object/instance": {
             assert(children.length === 3);
@@ -752,7 +766,8 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_OBJECT);
             assertDescNode(desc);
             assert(data.type === "external-data" || data.type === "serial-data");
-            return {type: "object", objectType: "new-object", handle: fakeHandle, span: node.span, children: [tc, desc, data]}
+            assert(node.handle !== undefined);
+            return {type: "object", objectType: "new-object", handle: node.handle, span: node.span, children: [tc, desc, data]}
         }
         case "external-data": {
             // PROTOCOL_VERSION_1
@@ -857,7 +872,9 @@ function cstToAstNode(node: CSTNode, children: ast.Node[]): ast.Node {
             const throwable = children[1];
             assert(tc.type === "tc" && tc.value === ObjectInputStream.TC_EXCEPTION);
             assert(throwable.type === "object" && (throwable.objectType === "new-object" || throwable.objectType === "prev-object"));
-            return {type: "object", objectType: "exception", exceptionEpoch: -1, newEpoch: -1, span: node.span, children: [tc, throwable]}
+            assert(typeof node.value === "number");
+            const newEpoch = node.value;
+            return {type: "object", objectType: "exception", exceptionEpoch: newEpoch-1, newEpoch: newEpoch, span: node.span, children: [tc, throwable]}
         }
         case "annotation": {
             assert(children.length > 0);
